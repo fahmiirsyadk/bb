@@ -7,7 +7,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createPluginArtifactMeta } from "./plugin-artifact-meta.js";
 import { validatePluginBuildManifest } from "./plugin-manifest.js";
 import { type PluginBuildToolchain } from "./toolchain.js";
@@ -47,6 +47,19 @@ interface PluginServerConfig {
   pluginVersion: string;
 }
 
+function isPathWithinDirectory(
+  rootPath: string,
+  candidatePath: string,
+): boolean {
+  const relativePath = relative(rootPath, candidatePath);
+  return (
+    relativePath === "" ||
+    (relativePath !== ".." &&
+      !relativePath.startsWith(`..${sep}`) &&
+      !isAbsolute(relativePath))
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -83,7 +96,7 @@ async function readPluginServerConfig(
     throw new Error(`manifest bb.server must be relative, got "${server}"`);
   }
   const serverEntry = resolve(rootDir, server);
-  if (serverEntry !== rootDir && !serverEntry.startsWith(rootDir + "/")) {
+  if (!isPathWithinDirectory(rootDir, serverEntry)) {
     throw new Error(
       `manifest bb.server escapes the plugin directory: "${server}"`,
     );

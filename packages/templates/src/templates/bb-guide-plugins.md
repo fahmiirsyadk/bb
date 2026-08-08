@@ -249,7 +249,7 @@ build is reported as available and fails when you apply it.
 
 bb ships no build toolchain. The first time a git or path plugin is built on
 a machine, bb downloads a pinned esbuild + Tailwind set into
-`<dataDir>/plugins/toolchain-<versions>/` and reuses it afterwards. Installing
+`<dataDir>/plugins/toolchain-<versions>-<platform>-<arch>/` and reuses it afterwards. Installing
 a prebuilt npm plugin never triggers that download.
 
 To build a plugin yourself — in CI, or to check it compiles without a running

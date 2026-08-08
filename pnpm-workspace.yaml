@@ -7,3 +7,12 @@ packages:
   # dependencies are installed into each plugin's own node_modules — plugins
   # bring their own dependencies.
   - "examples/plugins/*"
+
+supportedArchitectures:
+  os:
+    - current
+    - linux
+    - win32
+  cpu:
+    - arm64
+    - x64

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildPluginApp } from "./build-plugin-app.js";
 import {
@@ -20,14 +20,18 @@ describe("plugin build toolchain", () => {
     await rm(baseDir, { recursive: true, force: true });
   });
 
-  // Bumping a pin must install beside the old set rather than mutate a
-  // directory a concurrent build may already be importing from.
-  it("keys the cache directory on the pinned versions", () => {
-    const dir = toolchainCacheDir("/data");
+  // Bumping a pin or changing host platforms must install beside the old set
+  // rather than mutate a directory a concurrent build may already be importing
+  // from.
+  it("keys the cache directory on the pinned versions and host platform", () => {
+    const baseDir = resolve("data");
+    const dir = toolchainCacheDir(baseDir);
     for (const version of Object.values(PLUGIN_TOOLCHAIN_PINS)) {
       expect(basename(dir)).toContain(version);
     }
-    expect(dir.startsWith("/data/")).toBe(true);
+    expect(basename(dir)).toContain(process.platform);
+    expect(basename(dir)).toContain(process.arch);
+    expect(dirname(dir)).toBe(baseDir);
   });
 
   // The monorepo and any machine that already has the packages must not pay a

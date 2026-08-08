@@ -238,10 +238,7 @@ describe("electron-builder signing config", () => {
     );
 
     expect(Object.keys(packageJson.optionalDependencies ?? {})).not.toEqual(
-      expect.arrayContaining([
-        "@esbuild/darwin-arm64",
-        "@esbuild/darwin-x64",
-      ]),
+      expect.arrayContaining(["@esbuild/darwin-arm64", "@esbuild/darwin-x64"]),
     );
   });
 
@@ -281,7 +278,7 @@ describe("electron-builder signing config", () => {
 
     expect(packageJson.pnpm.supportedArchitectures).toEqual({
       cpu: ["arm64", "x64"],
-      os: ["current"],
+      os: ["current", "linux", "win32"],
     });
   });
 

@@ -58,7 +58,9 @@
   "pnpm": {
     "supportedArchitectures": {
       "os": [
-        "current"
+        "current",
+        "linux",
+        "win32"
       ],
       "cpu": [
         "arm64",

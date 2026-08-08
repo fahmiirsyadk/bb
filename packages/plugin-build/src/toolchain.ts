@@ -46,12 +46,17 @@ function pinKey(): string {
 }
 
 /**
- * Directory holding one pinned toolchain set. Keyed by the pins themselves so
- * upgrading bb installs a fresh set beside the old one rather than mutating a
+ * Directory holding one pinned toolchain set. Keyed by the pins and host
+ * platform so sharing a data directory between Windows and WSL2 or upgrading
+ * bb installs a fresh set beside the old one rather than mutating a
  * directory a concurrent build may be importing from.
  */
 export function toolchainCacheDir(baseDir: string): string {
-  const key = Object.values(PLUGIN_TOOLCHAIN_PINS).join("-");
+  const key = [
+    ...Object.values(PLUGIN_TOOLCHAIN_PINS),
+    process.platform,
+    process.arch,
+  ].join("-");
   return join(baseDir, `toolchain-${key}`);
 }
 
