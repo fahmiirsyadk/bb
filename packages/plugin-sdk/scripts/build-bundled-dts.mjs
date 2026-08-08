@@ -19,6 +19,13 @@ import { fileURLToPath } from "node:url";
 import { rollup } from "rollup";
 import { dts } from "rollup-plugin-dts";
 
+if (process.env.BB_SKIP_BUNDLED_DTS === "1") {
+  process.stdout.write(
+    "Skipped @bb/plugin-sdk bundled declaration generation for runtime startup.\n",
+  );
+  process.exit(0);
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(here, "..");
 const pkgsDir = path.resolve(pkgRoot, "..");

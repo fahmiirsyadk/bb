@@ -49,7 +49,13 @@ async function buildRuntimeArtifacts() {
     ],
     {
       cwd: repoRoot,
-      env: process.env,
+      env: {
+        ...process.env,
+        // Production source startup only needs the runtime SDK bundles. The
+        // committed bundled declarations are consumed by plugin scaffolding;
+        // regenerating them here is a large Rollup memory spike on small VPSes.
+        BB_SKIP_BUNDLED_DTS: "1",
+      },
       stdio: "inherit",
     },
   );
