@@ -119,6 +119,26 @@ function pairingCommand(
   return `curl -fsSL ${serverUrl}/install.sh | sh -s -- --join-code ${joinCode} --host-id ${hostId} --server ${serverUrl}${machineFlag}`;
 }
 
+function quotePowerShell(value: string): string {
+  return `'${value.replace(/'/gu, "''")}'`;
+}
+
+export function pairingPowerShellCommand(
+  joinCode: string,
+  hostId: string,
+  machineCode: ConnectMachineCode | null,
+  directServerUrl: string | null,
+): string | null {
+  const serverUrl = machineCode?.serverUrl ?? directServerUrl;
+  if (serverUrl === null) return null;
+  const machineFlag =
+    machineCode === null
+      ? ""
+      : ` -MachineCode ${quotePowerShell(machineCode.code)}`;
+  const scriptUrl = `${serverUrl.replace(/\/+$/u, "")}/install.ps1`;
+  return `$installer = Join-Path $env:TEMP 'bb-install.ps1'; Invoke-WebRequest -UseBasicParsing ${quotePowerShell(scriptUrl)} -OutFile $installer; & $installer -JoinCode ${quotePowerShell(joinCode)} -HostId ${quotePowerShell(hostId)} -Server ${quotePowerShell(serverUrl)}${machineFlag}`;
+}
+
 function AddMachineDialogContent({
   onOpenChange,
   serverUrl,
@@ -164,6 +184,9 @@ function AddMachineDialogContent({
   }, []);
 
   const [copied, setCopied] = useState(false);
+  const [commandPlatform, setCommandPlatform] = useState<"posix" | "windows">(
+    "posix",
+  );
   useEffect(() => {
     if (!copied) return;
     const timeout = window.setTimeout(() => setCopied(false), 2000);
@@ -187,6 +210,17 @@ function AddMachineDialogContent({
           serverUrl,
         )
       : null;
+  const windowsCommand =
+    joinCode !== null
+      ? pairingPowerShellCommand(
+          joinCode.joinCode,
+          joinCode.hostId,
+          machineCode,
+          serverUrl,
+        )
+      : null;
+  const displayedCommand =
+    commandPlatform === "windows" ? windowsCommand : command;
 
   return (
     <>
@@ -215,10 +249,38 @@ function AddMachineDialogContent({
               Try again
             </Button>
           </div>
-        ) : command !== null ? (
+        ) : displayedCommand !== null ? (
           <div className="space-y-2">
+            <div
+              className="flex items-center gap-2"
+              role="tablist"
+              aria-label="Installer platform"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant={commandPlatform === "windows" ? "default" : "outline"}
+                className="h-7 px-2.5 text-xs"
+                role="tab"
+                aria-selected={commandPlatform === "windows"}
+                onClick={() => setCommandPlatform("windows")}
+              >
+                Windows PowerShell
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={commandPlatform === "posix" ? "default" : "outline"}
+                className="h-7 px-2.5 text-xs"
+                role="tab"
+                aria-selected={commandPlatform === "posix"}
+                onClick={() => setCommandPlatform("posix")}
+              >
+                macOS / Linux / WSL
+              </Button>
+            </div>
             <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/40 p-3 font-mono text-xs text-foreground">
-              {command}
+              {displayedCommand}
             </pre>
             <div className="flex items-center gap-2">
               <Button
@@ -228,9 +290,11 @@ function AddMachineDialogContent({
                 className="h-7 px-2.5 text-xs"
                 disabled={expired}
                 onClick={() => {
-                  void navigator.clipboard.writeText(command).then(() => {
-                    setCopied(true);
-                  });
+                  void navigator.clipboard
+                    .writeText(displayedCommand)
+                    .then(() => {
+                      setCopied(true);
+                    });
                 }}
               >
                 {copied ? "Copied" : "Copy"}
@@ -258,8 +322,10 @@ function AddMachineDialogContent({
               ) : null}
             </div>
             <p className="text-xs text-subtle-foreground/75">
-              This installs bb, enrolls the daemon, and configures it to
-              reconnect automatically on the other machine.
+              Windows users can run the PowerShell command in a normal user
+              session; WSL users should keep using the POSIX command inside WSL.
+              This installs bb, enrolls the daemon, and reconnects it
+              automatically.
             </p>
           </div>
         ) : (

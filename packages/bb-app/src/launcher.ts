@@ -2554,7 +2554,18 @@ async function runBundledCliCommand(
   // trampolines match the running host daemon (dev workspace or this install).
   const bbCliOverride = trimToUndefined(args.env.BB_CLI);
   const cliPath = bbCliOverride ?? join(args.context.daemonBundleDir, "bb");
-  const childProcess = spawn(cliPath, args.args, {
+  const windowsCommandShim =
+    process.platform === "win32" && cliPath.toLowerCase().endsWith(".cmd");
+  const command =
+    process.platform === "win32" && !windowsCommandShim
+      ? process.execPath
+      : cliPath;
+  const commandArgs =
+    process.platform === "win32" && !windowsCommandShim
+      ? [cliPath, ...args.args]
+      : args.args;
+  const childProcess = spawn(command, commandArgs, {
+    shell: windowsCommandShim,
     cwd: process.cwd(),
     env: createCliEnv({ context: args.context, env: args.env }),
     stdio: "inherit",

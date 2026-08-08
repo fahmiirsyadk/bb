@@ -113,6 +113,50 @@ describe("AddMachineDialog", () => {
     ).toBeNull();
   });
 
+  it("offers a native Windows PowerShell installer without changing the WSL command", async () => {
+    vi.mocked(sdk.hosts.createJoinCode).mockResolvedValue({
+      joinCode: "jc_windows",
+      hostId: "host_windows",
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    });
+    vi.mocked(sdk.plugins.callRpc).mockRejectedValue(
+      new BbHttpError({
+        body: {
+          ok: false,
+          error: { code: "handler_error", message: "not_paired" },
+        },
+        code: "handler_error",
+        message: "not_paired",
+        status: 500,
+      }),
+    );
+    vi.mocked(sdk.hosts.list).mockResolvedValue([existingHost]);
+
+    const { wrapper } = createQueryClientTestHarness();
+    render(
+      <AddMachineDialog
+        open
+        onOpenChange={vi.fn()}
+        serverUrl="https://swarm.fragmentof.me"
+      />,
+      { wrapper },
+    );
+
+    await screen.findByText(/--join-code jc_windows/);
+    expect(
+      screen.getByText(/curl -fsSL https:\/\/swarm.fragmentof.me\/install.sh/),
+    ).toBeDefined();
+    await act(async () => {
+      screen.getByRole("tab", { name: "Windows PowerShell" }).click();
+    });
+    expect(
+      screen.getByText(/Invoke-WebRequest -UseBasicParsing/),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/-Server 'https:\/\/swarm.fragmentof.me'/),
+    ).toBeDefined();
+  });
+
   it("falls back to direct pairing when connect is unpaired and ignores known hosts", async () => {
     vi.mocked(sdk.hosts.createJoinCode).mockResolvedValue({
       joinCode: "jc_test123",

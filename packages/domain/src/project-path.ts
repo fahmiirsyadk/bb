@@ -28,7 +28,7 @@ export function isAbsoluteProjectPath(path: string): boolean {
     return false;
   }
 
-  return trimmedPath.startsWith("/");
+  return trimmedPath.startsWith("/") || isNativeWindowsProjectPath(trimmedPath);
 }
 
 export function normalizeProjectPathInput(path: string): string {
@@ -37,11 +37,11 @@ export function normalizeProjectPathInput(path: string): string {
     return "";
   }
 
-  if (trimmedPath === "/") {
+  if (trimmedPath === "/" || WINDOWS_DRIVE_ROOT_PATTERN.test(trimmedPath)) {
     return trimmedPath;
   }
 
-  return trimmedPath.replace(/\/+$/u, "");
+  return trimmedPath.replace(/[\\/]+$/u, "");
 }
 
 export function getProjectPathValidationMessage(path: string): string | null {
@@ -49,13 +49,13 @@ export function getProjectPathValidationMessage(path: string): string | null {
   if (!normalizedPath) {
     return INVALID_PROJECT_PATH_MESSAGE;
   }
-  if (isNativeWindowsProjectPath(normalizedPath)) {
-    return UNSUPPORTED_NATIVE_WINDOWS_PROJECT_PATH_MESSAGE;
-  }
   if (!isAbsoluteProjectPath(normalizedPath)) {
     return INVALID_PROJECT_PATH_MESSAGE;
   }
-  if (normalizedPath === "/") {
+  if (
+    normalizedPath === "/" ||
+    WINDOWS_DRIVE_ROOT_PATTERN.test(normalizedPath)
+  ) {
     return PROJECT_PATH_ROOT_MESSAGE;
   }
   return null;
@@ -66,12 +66,12 @@ export function deriveProjectNameFromPath(path: string): string {
   if (
     !normalizedPath ||
     normalizedPath === "/" ||
-    isNativeWindowsProjectPath(normalizedPath) ||
+    WINDOWS_DRIVE_ROOT_PATTERN.test(normalizedPath) ||
     !isAbsoluteProjectPath(normalizedPath)
   ) {
     return "";
   }
 
-  const segments = normalizedPath.split("/").filter(Boolean);
+  const segments = normalizedPath.split(/[\\/]+/u).filter(Boolean);
   return segments.at(-1) ?? "";
 }

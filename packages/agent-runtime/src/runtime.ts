@@ -1667,8 +1667,13 @@ function createAgentRuntimeInternal(
       return threadIdentityRegistry.getProviderSession(threadId) !== null;
     },
 
-    getActiveThreadIds() {
-      return turnState.getActiveThreadIds();
+    getLiveThreadIds() {
+      return [
+        ...new Set([
+          ...turnState.getActiveThreadIds(),
+          ...pendingTurnStartThreadIds,
+        ]),
+      ];
     },
 
     hasOpenBackgroundWork() {

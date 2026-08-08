@@ -6,6 +6,7 @@
 
 - macOS persistent host
 - Linux persistent host
+- Windows native persistent host (PowerShell installer)
 - Windows via Ubuntu on WSL2
 
 Minimum runtime: Node.js 22.19. The floor comes from Pi, whose packages declare
@@ -22,14 +23,21 @@ floor only, so a release line we have not tested yet still installs rather than
 failing hard on the day it ships. The `bb-app` npm `engines` field lists the
 tested lines, which npm surfaces as a warning rather than an install failure.
 
-Windows support means the Linux stack runs entirely inside WSL2:
+WSL2 remains a supported Linux host path:
 
 - all `bb` processes run inside the same Ubuntu WSL2 distro
 - Node.js, Git, provider CLIs, and pnpm for source-development flows are
   installed inside WSL2
 - local project paths use Linux-style absolute paths from inside WSL2
-- native Windows PowerShell, CMD, drive-letter paths, and UNC paths are not
-  supported product paths
+
+### Native Windows expectations
+
+- native Windows PowerShell uses the per-user host-daemon installer exposed as
+  `/install.ps1`; it does not require Tailscale or an administrator account
+- native Windows drive-letter and UNC project paths are accepted by the server
+  and are executed by the paired Windows host
+- the native Windows host currently does not provide an embedded terminal; use
+  a provider session or WSL for terminal-heavy workflows
 
 ## Support Boundaries
 
@@ -73,14 +81,15 @@ Windows support means the Linux stack runs entirely inside WSL2:
   the WSL filesystem, but they are a tradeoff:
   slower filesystem I/O and weaker file-watching behavior than the WSL
   filesystem.
-- Native Windows drive-letter and UNC paths are rejected at the app/server
-  boundary so unsupported input fails clearly.
+- Native Windows drive-letter and UNC paths should be used from the Windows
+  installer path instead of being converted to `/mnt/c` paths.
 
 ### Maintainer-only or best-effort surfaces
 
 - workspace-owned QA helpers under [`tests/qa/`](../tests/qa/)
 - dev restart internals that are not part of the shipped product path
-- native Windows PowerShell, CMD, and host-daemon runtime flows
+- native Windows terminal and shell-hook flows (the host daemon itself is
+  supported; these surfaces remain best-effort)
 
 ## Dependency Policy
 
@@ -154,6 +163,5 @@ rebuild the native dependency, for example `npm rebuild better-sqlite3`.
   `Package Smoke (macos-latest, Node 22.x)`. The Node.js 24 and 26 compatibility
   smoke jobs do not run on pull requests and should not be configured as
   required PR checks.
-- Native Windows CI is intentionally not required because Windows support uses
-  the Linux runtime path inside WSL2 rather than a separate native Windows
-  product path.
+- Native Windows CI is intentionally not required yet; the installer and
+  platform contract are covered by Linux-side contract and route tests.

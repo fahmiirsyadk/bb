@@ -428,7 +428,7 @@ export function createFakeRuntime() {
     hasThread(threadId) {
       return providerSessionsByThreadId.has(threadId);
     },
-    getActiveThreadIds() {
+    getLiveThreadIds() {
       return [...activeTurnsByThreadId.keys()];
     },
     hasOpenBackgroundWork() {

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { basename, delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +60,14 @@ const USER_SHELL_ENV_TIMEOUT_MS = 3_000;
 const USER_SHELL_ENV_FORCE_KILL_AFTER_MS = 1_000;
 
 function getDefaultCliExecutablePath(): string {
+  if (process.platform === "win32") {
+    const packagedCliPath = fileURLToPath(
+      new URL("../../host-daemon/dist/bb", import.meta.url),
+    );
+    if (existsSync(packagedCliPath)) {
+      return packagedCliPath;
+    }
+  }
   return fileURLToPath(new URL("../../cli/bin/bb", import.meta.url));
 }
 
@@ -357,7 +365,7 @@ export async function resolveLocalBbExecutablePath(
 
 /** Platform-stable name of the bb CLI file inside `BB_CLI_DIR` / daemon dist. */
 export function bbExecutableFileName(): string {
-  return "bb";
+  return process.platform === "win32" ? "bb.cmd" : "bb";
 }
 
 export function resolveBbExecutablePathInDirectory(

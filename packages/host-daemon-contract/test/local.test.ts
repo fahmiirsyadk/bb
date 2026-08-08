@@ -13,7 +13,13 @@ import {
 
 describe("hostPlatformSchema", () => {
   it("accepts the supported platform values", () => {
-    for (const value of ["darwin", "linux", "wsl", "unknown"] as const) {
+    for (const value of [
+      "darwin",
+      "linux",
+      "wsl",
+      "windows",
+      "unknown",
+    ] as const) {
       expect(hostPlatformSchema.parse(value)).toBe(value);
     }
   });

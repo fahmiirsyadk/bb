@@ -359,6 +359,7 @@ export default {
     // before the new machine has a browser session or credential.
     const isPublicInstallPath =
       url.pathname === "/install.sh" ||
+      url.pathname === "/install.ps1" ||
       url.pathname === "/install/version" ||
       url.pathname === "/install/bb-app.tgz";
     if (request.method === "GET" && isPublicInstallPath) {

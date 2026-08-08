@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir, stat } from "node:fs/promises";
+import { chmod, copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -42,6 +42,13 @@ async function main() {
     });
     if (target.executable) {
       await chmod(target.outfile, 0o755);
+      if (target.label === "bb cli") {
+        await writeFile(
+          resolve(packageRoot, "dist", "bb.cmd"),
+          '@echo off\r\nnode "%~dp0bb" %*\r\n',
+          "utf8",
+        );
+      }
     }
     const bundleStats = await stat(target.outfile);
     console.log(`${target.label}: ${bundleStats.size} bytes`);

@@ -1,5 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "BB_SKIP_BUNDLED_DTS"
+  ],
   "tasks": {
     "@bb/web#build": {
       "inputs": [

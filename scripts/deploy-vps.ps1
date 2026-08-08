@@ -200,15 +200,17 @@ sudo -u "$APP_USER" env HOME="/home/$APP_USER" bash -s -- "$INSTALL_DIR" "$PNPM_
 set -Eeuo pipefail
 cd "$1"
 rm -rf node_modules
-"$2" install --frozen-lockfile \
+NODE_OPTIONS=--max-old-space-size=768 "$2" install --frozen-lockfile \
+  --child-concurrency=1 \
+  --network-concurrency=2 \
   --filter "." \
   --filter "bb-app..." \
-  --filter "...@bb/scripts" \
-  --filter "...@bb/plugin-sdk" \
-  --filter "...@bb/app" \
-  --filter "...@bb/server" \
-  --filter "...@bb/host-daemon" \
-  --filter "...{./plugins/**}"
+  --filter "@bb/scripts..." \
+  --filter "@bb/plugin-sdk..." \
+  --filter "@bb/app..." \
+  --filter "@bb/server..." \
+  --filter "@bb/host-daemon..." \
+  --filter "{./plugins/**}..."
 BB_INSTALL
 
 log_phase "Writing production environment and systemd configuration."
@@ -221,6 +223,7 @@ BB_APP_URL=$APP_URL
 BB_SERVER_BIND_HOST=127.0.0.1
 BB_SERVER_PORT=38886
 BB_BUILD_CONCURRENCY=1
+NODE_OPTIONS=--max-old-space-size=768
 BB_ENV
 sudo chown root:"$APP_USER" /etc/bb/bb.env
 sudo chmod 640 /etc/bb/bb.env

@@ -229,7 +229,7 @@ function createFakeRuntime(): AgentRuntime {
     getProviderSession: vi.fn(() => null),
     reapIdleProviderSessions: vi.fn(async () => ({ reapedSessions: [] })),
     hasThread: vi.fn(() => false),
-    getActiveThreadIds: vi.fn(() => []),
+    getLiveThreadIds: vi.fn(() => []),
     hasOpenBackgroundWork: vi.fn(() => false),
     shutdown: vi.fn(async () => undefined),
   };
