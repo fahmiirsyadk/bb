@@ -15,6 +15,10 @@ import { takeOverPanelResizeCursor } from "./lib/resizeCursor";
 import { applyCachedAppThemeCss } from "./lib/themes";
 import "./app.css";
 
+if (import.meta.env.DEV) {
+  void import("react-scan").then(({ scan }) => scan({ enabled: true }));
+}
+
 const queryClient = createAppQueryClient();
 installAppQueryClientBrowserEvents(queryClient);
 // The provider CLI install store outlives every component, so it takes the

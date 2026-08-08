@@ -236,7 +236,7 @@ export const BB_POSTHOG_API_KEY_ENV = defineEnvVar<string>({
 
 export const BB_TELEMETRY_ENV = defineEnvVar<boolean>({
   description:
-    "Anonymous usage telemetry (app starts, thread creation counts, and user message counts). Set to false to opt out.",
+    "Anonymous usage telemetry (app starts, thread creation counts, and user message counts). Disabled by default; set to true to opt in.",
   name: "BB_TELEMETRY",
   parse: parseBooleanEnvValue,
 });
@@ -353,10 +353,10 @@ export const DEFAULT_BB_EXTERNAL_URL = "";
 export const DEFAULT_OPENAI_API_KEY = "";
 // Public write-only PostHog ingestion key (these are safe to ship; they can
 // only create events). Telemetry still only activates in production server
-// runs and can always be disabled with BB_TELEMETRY=false.
+// runs and can be explicitly enabled with BB_TELEMETRY=true.
 export const DEFAULT_BB_POSTHOG_API_KEY =
   "phc_tejoYoNLV6vG8QAd5eYXXvcsENFYnP4brpZDGqG7zvpy";
-export const DEFAULT_BB_TELEMETRY = true;
+export const DEFAULT_BB_TELEMETRY = false;
 export const DEFAULT_BB_DEV_APP_HOST = "";
 export const DEFAULT_BB_INFERENCE = DEFAULTS.inferenceModel;
 export const DEFAULT_BB_TRANSCRIPTION = DEFAULTS.transcriptionModel;

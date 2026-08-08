@@ -1,0 +1,7 @@
+interface:
+  display_name: "Upstream Read-Only"
+  short_description: "Fetch and inspect upstream only"
+  default_prompt: "Use $upstream-read-only to fetch and inspect upstream commits without pushing or opening pull requests."
+
+policy:
+  allow_implicit_invocation: true

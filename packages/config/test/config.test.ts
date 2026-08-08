@@ -424,6 +424,18 @@ describe("consumer-specific config", () => {
     ).toThrow("BB_APP_SURFACE must be one of desktop, web");
   });
 
+  it("keeps telemetry disabled unless explicitly enabled", () => {
+    const defaultConfig = loadServerConfig({
+      env: createServerRuntimeEnv(),
+    });
+    const optedInConfig = loadServerConfig({
+      env: createServerRuntimeEnv({ BB_TELEMETRY: "true" }),
+    });
+
+    expect(defaultConfig.BB_TELEMETRY).toBe(false);
+    expect(optedInConfig.BB_TELEMETRY).toBe(true);
+  });
+
   it("lets tooling read the server port without validating unrelated server env", () => {
     const serverPortConfig = loadServerPortConfig({
       env: {

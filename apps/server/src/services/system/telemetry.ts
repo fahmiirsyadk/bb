@@ -20,8 +20,9 @@ import type { ServerLogger } from "../../types.js";
  * activates for production server runs with a resolved release version (the
  * bb-app launcher and desktop app set NODE_ENV=production). Dev/source runs
  * never send, even if a test starts them in production mode.
- * Disabled telemetry creates nothing, not even the install-id file. Opt out
- * any run with BB_TELEMETRY=false; override the key with BB_POSTHOG_API_KEY.
+ * Disabled telemetry creates nothing, not even the install-id file. Telemetry
+ * is off by default; explicitly opt in with BB_TELEMETRY=true and override the
+ * key with BB_POSTHOG_API_KEY when needed.
  */
 
 const POSTHOG_INGESTION_URL = "https://us.i.posthog.com/capture/";
