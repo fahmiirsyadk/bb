@@ -138,6 +138,8 @@ APP_USER=bb
 SERVICE_NAME=bb
 
 sudo -v
+sudo systemctl stop "$SERVICE_NAME.service" 2>/dev/null || true
+sudo systemctl reset-failed "$SERVICE_NAME.service" 2>/dev/null || true
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates \
