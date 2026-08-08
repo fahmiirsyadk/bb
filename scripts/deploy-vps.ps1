@@ -187,7 +187,15 @@ sudo -u "$APP_USER" env HOME="/home/$APP_USER" bash -s -- "$INSTALL_DIR" "$PNPM_
 set -Eeuo pipefail
 cd "$1"
 rm -rf node_modules
-"$2" install --frozen-lockfile
+"$2" install --frozen-lockfile \
+  --filter "." \
+  --filter "bb-app..." \
+  --filter "...@bb/scripts" \
+  --filter "...@bb/plugin-sdk" \
+  --filter "...@bb/app" \
+  --filter "...@bb/server" \
+  --filter "...@bb/host-daemon" \
+  --filter "...{./plugins/**}"
 BB_INSTALL
 
 sudo mkdir -p "$DATA_DIR" /etc/bb
