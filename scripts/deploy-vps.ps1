@@ -137,9 +137,15 @@ APP_URL=__APP_URL__
 APP_USER=bb
 SERVICE_NAME=bb
 
+log_phase() {
+  printf '[%s] [deploy] %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "$*"
+}
+
+log_phase "Stopping any existing $SERVICE_NAME.service and clearing failed state."
 sudo -v
 sudo systemctl stop "$SERVICE_NAME.service" 2>/dev/null || true
 sudo systemctl reset-failed "$SERVICE_NAME.service" 2>/dev/null || true
+log_phase "Installing operating-system prerequisites."
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates \
@@ -157,10 +163,12 @@ node_is_supported() {
 }
 
 if ! command -v node >/dev/null 2>&1 || ! node_is_supported; then
+  log_phase "Installing a supported Node.js release."
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 fi
 
+log_phase "Installing pnpm."
 sudo npm install --global pnpm@9.15.0
 PNPM_BIN="$(command -v pnpm)"
 
@@ -176,8 +184,10 @@ fi
 sudo install -d -o "$APP_USER" -g "$APP_USER" "$INSTALL_DIR"
 
 if [ ! -d "$INSTALL_DIR/.git" ]; then
+  log_phase "Cloning $REPO_URL ($BRANCH) into $INSTALL_DIR."
   sudo -u "$APP_USER" git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
 else
+  log_phase "Updating $INSTALL_DIR from origin/$BRANCH."
   sudo -u "$APP_USER" git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL"
   sudo -u "$APP_USER" git -C "$INSTALL_DIR" fetch --prune origin
   sudo -u "$APP_USER" git -C "$INSTALL_DIR" checkout "$BRANCH"
@@ -185,6 +195,7 @@ else
 fi
 
 sudo chown -R "$APP_USER:$APP_USER" "$INSTALL_DIR"
+log_phase "Installing server runtime dependencies. This can take several minutes; pnpm output follows live."
 sudo -u "$APP_USER" env HOME="/home/$APP_USER" bash -s -- "$INSTALL_DIR" "$PNPM_BIN" <<'BB_INSTALL'
 set -Eeuo pipefail
 cd "$1"
@@ -200,6 +211,7 @@ rm -rf node_modules
   --filter "...{./plugins/**}"
 BB_INSTALL
 
+log_phase "Writing production environment and systemd configuration."
 sudo mkdir -p "$DATA_DIR" /etc/bb
 sudo chown -R "$APP_USER:$APP_USER" "$DATA_DIR"
 sudo tee /etc/bb/bb.env >/dev/null <<BB_ENV
@@ -237,7 +249,20 @@ BB_SERVICE
 
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME.service"
+log_phase "Starting $SERVICE_NAME.service. The live journal below shows whether it is building or running."
+journal_pid=""
+stop_journal() {
+  if [ -n "$journal_pid" ]; then
+    kill "$journal_pid" 2>/dev/null || true
+    wait "$journal_pid" 2>/dev/null || true
+    journal_pid=""
+  fi
+}
+trap stop_journal EXIT
+sudo journalctl -u "$SERVICE_NAME.service" --since "now" -f --no-pager &
+journal_pid=$!
 sudo systemctl restart "$SERVICE_NAME.service"
+log_phase "Streaming service logs while waiting for http://127.0.0.1:38886/health."
 
 healthy=0
 for attempt in $(seq 1 300); do
@@ -245,8 +270,15 @@ for attempt in $(seq 1 300); do
     healthy=1
     break
   fi
+  if [ "$((attempt % 10))" -eq 0 ]; then
+    service_state="$(sudo systemctl is-active "$SERVICE_NAME.service" 2>/dev/null || true)"
+    log_phase "Still waiting (${attempt}/300s); service state: ${service_state:-unknown}."
+  fi
   sleep 1
 done
+
+stop_journal
+trap - EXIT
 
 if [ "$healthy" -ne 1 ]; then
   echo "bb did not become healthy on http://127.0.0.1:38886/health" >&2
@@ -255,7 +287,7 @@ if [ "$healthy" -ne 1 ]; then
   exit 1
 fi
 
-echo "Deployment complete."
+log_phase "Deployment complete."
 echo "Revision: $(sudo -u "$APP_USER" git -C "$INSTALL_DIR" rev-parse --short HEAD)"
 echo "Service: $(sudo systemctl is-active "$SERVICE_NAME.service")"
 echo "Logs: journalctl -u $SERVICE_NAME -f"
