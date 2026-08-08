@@ -227,6 +227,22 @@ BB_SERVICE
 sudo systemctl daemon-reload
 sudo systemctl enable --now "$SERVICE_NAME.service"
 
+healthy=0
+for attempt in $(seq 1 300); do
+  if sudo systemctl is-active --quiet "$SERVICE_NAME.service" && curl --fail --silent http://127.0.0.1:38886/health >/dev/null; then
+    healthy=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$healthy" -ne 1 ]; then
+  echo "bb did not become healthy on http://127.0.0.1:38886/health" >&2
+  sudo systemctl status "$SERVICE_NAME.service" --no-pager || true
+  sudo journalctl -u "$SERVICE_NAME.service" -n 100 --no-pager || true
+  exit 1
+fi
+
 echo "Deployment complete."
 echo "Revision: $(sudo -u "$APP_USER" git -C "$INSTALL_DIR" rev-parse --short HEAD)"
 echo "Service: $(sudo systemctl is-active "$SERVICE_NAME.service")"
