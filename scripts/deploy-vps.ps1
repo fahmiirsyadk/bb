@@ -198,6 +198,7 @@ BB_DATA_DIR=$DATA_DIR
 BB_APP_URL=$APP_URL
 BB_SERVER_BIND_HOST=127.0.0.1
 BB_SERVER_PORT=38886
+BB_BUILD_CONCURRENCY=1
 BB_ENV
 sudo chown root:"$APP_USER" /etc/bb/bb.env
 sudo chmod 640 /etc/bb/bb.env

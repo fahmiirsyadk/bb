@@ -17,8 +17,19 @@ function waitForProcess(child) {
   });
 }
 
+function resolveBuildConcurrency() {
+  const value = process.env.BB_BUILD_CONCURRENCY ?? "2";
+  if (!/^[1-9][0-9]*$/u.test(value)) {
+    throw new Error(
+      `BB_BUILD_CONCURRENCY must be a positive integer, got ${JSON.stringify(value)}`,
+    );
+  }
+  return value;
+}
+
 async function buildRuntimeArtifacts() {
   const turboEntrypoint = requireFromRoot.resolve("turbo/bin/turbo");
+  const buildConcurrency = resolveBuildConcurrency();
   const child = spawn(
     process.execPath,
     [
@@ -30,8 +41,8 @@ async function buildRuntimeArtifacts() {
       "--filter=@bb/app",
       "--filter=@bb/server",
       "--filter=@bb/host-daemon",
-      "--concurrency=2",
-      "--output-logs=none",
+      `--concurrency=${buildConcurrency}`,
+      "--output-logs=errors-only",
       "--log-prefix=none",
       "--summarize=false",
       "--no-update-notifier",
