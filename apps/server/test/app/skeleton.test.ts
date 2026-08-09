@@ -87,6 +87,21 @@ describe("server skeleton", () => {
     ).toHaveLength(2);
   });
 
+  it("clears a stale persisted host ID when replacing a Windows enrollment", () => {
+    const script = readFileSync(
+      new URL("../../src/assets/install-machine.ps1", import.meta.url),
+      "utf8",
+    );
+
+    expect(script).toContain('$hostIdPath = Join-Path $dataRoot "host-id"');
+    expect(script).toContain(
+      "$persistedHostId -and $persistedHostId -ne $HostId",
+    );
+    expect(script).toContain(
+      "Remove-Item -Force -ErrorAction SilentlyContinue -Path @($authPath, $hostIdPath)",
+    );
+  });
+
   it("serves install version metadata without auth", async () => {
     const harness = await createTestAppHarness();
     const { app } = createApp(harness.deps, {

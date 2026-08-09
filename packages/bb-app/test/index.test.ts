@@ -171,6 +171,7 @@ const packageMetadataSchema = z.object({
   engines: z.object({
     node: z.string(),
   }),
+  files: z.array(z.string()),
   os: z.array(z.string()),
 });
 
@@ -1967,5 +1968,11 @@ describe("bb-app launcher", () => {
 
     expect(metadata.engines.node).toBe("^22.19.0 || ^24.0.0 || ^26.0.0");
     expect(metadata.os).toEqual(["darwin", "linux", "win32"]);
+  });
+
+  it("packages the Windows shim for the daemon-managed bb CLI", () => {
+    const metadata = readPackageMetadata();
+
+    expect(metadata.files).toContain("host-daemon/dist/bb.cmd");
   });
 });

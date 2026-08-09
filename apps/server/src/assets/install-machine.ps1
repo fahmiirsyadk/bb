@@ -132,29 +132,37 @@ if ($MachineCode) {
 }
 
 $authPath = Join-Path $dataRoot "auth.json"
+$hostIdPath = Join-Path $dataRoot "host-id"
 $alreadyJoined = $false
+$authHostId = $null
 if (Test-Path $authPath) {
   try {
     $auth = Get-Content $authPath -Raw | ConvertFrom-Json
-    if ($auth.hostId -eq $HostId) {
-      $alreadyJoined = $true
-    } else {
-      Write-Host "Replacing the previous enrollment for $Server..."
-      Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-      Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-      Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-          $_.ProcessId -ne $PID -and
-          ([string]$_.CommandLine).Contains("host-daemon") -and
-          ([string]$_.CommandLine).Contains($Server)
-        } |
-        ForEach-Object {
-          Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
-      Start-Sleep -Milliseconds 250
-      Remove-Item -Force $authPath
-    }
+    $authHostId = [string]$auth.hostId
   } catch { Fail "Could not read the existing bb enrollment in $dataRoot." }
+}
+$persistedHostId = if (Test-Path $hostIdPath) { ([string](Get-Content $hostIdPath -TotalCount 1)).Trim() } else { $null }
+$replacingEnrollment = (
+  ($authHostId -and $authHostId -ne $HostId) -or
+  ($persistedHostId -and $persistedHostId -ne $HostId)
+)
+if ($replacingEnrollment) {
+  Write-Host "Replacing the previous enrollment for $Server..."
+  Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.ProcessId -ne $PID -and
+      ([string]$_.CommandLine).Contains("host-daemon") -and
+      ([string]$_.CommandLine).Contains($Server)
+    } |
+    ForEach-Object {
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+  Start-Sleep -Milliseconds 250
+  Remove-Item -Force -ErrorAction SilentlyContinue -Path @($authPath, $hostIdPath)
+} elseif ($authHostId -eq $HostId) {
+  $alreadyJoined = $true
 }
 
 $joinProcess = $null

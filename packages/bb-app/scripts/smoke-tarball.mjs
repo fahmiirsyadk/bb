@@ -419,6 +419,16 @@ async function smokeProviderBridgeBundles(packageDir) {
   });
 }
 
+async function smokeWindowsCliShim(packageDir) {
+  const shim = await readFile(
+    join(packageDir, "host-daemon", "dist", "bb.cmd"),
+    "utf8",
+  );
+  if (shim !== '@echo off\r\nnode "%~dp0bb" %*\r\n') {
+    throw new Error("Packed bb-app has an invalid Windows bb CLI shim");
+  }
+}
+
 function collectJsonRpcMessages({ childProcess, onMessage }) {
   const messages = [];
   let buffer = "";
@@ -1000,6 +1010,7 @@ try {
   await smokeConfigCommand(tarballPath);
   const sdkDir = await smokeSdkPackage(tarballPath);
   const installedPackageDir = join(sdkDir, "node_modules", "bb-app");
+  await smokeWindowsCliShim(installedPackageDir);
   await smokeProviderBridgeBundles(installedPackageDir);
   await smokePiUserConfiguration(installedPackageDir);
   await smokeFullStack(tarballPath, sdkDir);
