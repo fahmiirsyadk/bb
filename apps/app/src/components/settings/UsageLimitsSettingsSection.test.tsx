@@ -71,6 +71,34 @@ describe("UsageLimitsSettingsSectionContent", () => {
     expect(screen.getByText("$5.00 / $50")).toBeDefined();
   });
 
+  it("renders an empty bar for zero usage", () => {
+    renderContent({
+      usage: {
+        codex: {
+          status: "ok",
+          accountEmail: null,
+          planLabel: "Plus",
+          windows: [
+            { label: "Weekly limit", usedPercent: 0, resetsAt: null },
+          ],
+        },
+      },
+      isLoading: false,
+      isError: false,
+      isFetching: false,
+      onRefresh: vi.fn(),
+    });
+
+    const usageLabel = screen.getByText("0% used");
+    const bar = usageLabel.parentElement?.nextElementSibling?.firstElementChild;
+
+    expect(bar).toBeInstanceOf(HTMLElement);
+    if (!(bar instanceof HTMLElement)) {
+      throw new Error("Expected usage bar to be an HTML element");
+    }
+    expect(bar.style.width).toBe("0%");
+  });
+
   it("hides Cursor when its CLI is not installed", () => {
     renderContent({
       usage: {

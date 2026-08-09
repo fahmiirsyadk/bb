@@ -144,7 +144,7 @@ function UsageWindowRow({ window }: { window: ProviderUsageWindow }) {
             "h-full rounded-full",
             barColorClass(window.usedPercent),
           )}
-          style={{ width: `${Math.max(window.usedPercent, 2)}%` }}
+          style={{ width: `${window.usedPercent}%` }}
         />
       </div>
       {reset ? <p className="text-xs text-muted-foreground">{reset}</p> : null}

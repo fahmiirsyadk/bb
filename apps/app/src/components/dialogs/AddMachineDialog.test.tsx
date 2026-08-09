@@ -137,14 +137,14 @@ describe("AddMachineDialog", () => {
       <AddMachineDialog
         open
         onOpenChange={vi.fn()}
-        serverUrl="https://swarm.fragmentof.me"
+        serverUrl="https://bb.example.test"
       />,
       { wrapper },
     );
 
     await screen.findByText(/--join-code jc_windows/);
     expect(
-      screen.getByText(/curl -fsSL https:\/\/swarm.fragmentof.me\/install.sh/),
+      screen.getByText(/curl -fsSL https:\/\/bb\.example\.test\/install.sh/),
     ).toBeDefined();
     await act(async () => {
       screen.getByRole("tab", { name: "Windows PowerShell" }).click();
@@ -153,7 +153,7 @@ describe("AddMachineDialog", () => {
       screen.getByText(/Invoke-WebRequest -UseBasicParsing/),
     ).toBeDefined();
     expect(
-      screen.getByText(/-Server 'https:\/\/swarm.fragmentof.me'/),
+      screen.getByText(/-Server 'https:\/\/bb\.example\.test'/),
     ).toBeDefined();
   });
 
