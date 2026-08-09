@@ -1159,6 +1159,42 @@ export function PromptBoxInternal({
   // Passive text autofocus opens the soft keyboard on coarse-pointer devices.
   const shouldAvoidSoftKeyboardAutofocus = isPointerCoarse;
   const formRef = useRef<HTMLFormElement>(null);
+  const beamRequested = isRunning || isSubmitting;
+  const [beamIsActive, setBeamIsActive] = useState(beamRequested);
+  const [beamIsFading, setBeamIsFading] = useState(false);
+  const [beamIsVisible, setBeamIsVisible] = useState(true);
+  useEffect(() => {
+    if (beamRequested && !beamIsActive && !beamIsFading) {
+      setBeamIsActive(true);
+    } else if (!beamRequested && beamIsActive && !beamIsFading) {
+      setBeamIsFading(true);
+    }
+  }, [beamIsActive, beamIsFading, beamRequested]);
+  useEffect(() => {
+    if (!beamIsFading) return;
+    const timeout = window.setTimeout(() => {
+      setBeamIsActive(false);
+      setBeamIsFading(false);
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [beamIsFading]);
+  useEffect(() => {
+    const formElement = formRef.current;
+    if (!formElement || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setBeamIsVisible(entry.isIntersecting);
+      },
+      { rootMargin: "256px" },
+    );
+    observer.observe(formElement);
+    return () => observer.disconnect();
+  }, []);
+  const handleBeamAnimationEnd = useCallback(() => {
+    if (!beamIsFading) return;
+    setBeamIsActive(false);
+    setBeamIsFading(false);
+  }, [beamIsFading]);
   const heightAnimationFromRef = useRef<number | null>(null);
   const capturePromptBoxHeight = useCallback(() => {
     const formElement = formRef.current;
@@ -2870,10 +2906,17 @@ export function PromptBoxInternal({
     <form
       ref={formRef}
       data-promptbox=""
+      data-beam="prompt"
+      data-active={beamIsActive && !beamIsFading ? "" : undefined}
+      data-fading={beamIsFading ? "" : undefined}
+      data-paused={
+        beamIsActive && !beamIsFading && !beamIsVisible ? "" : undefined
+      }
       data-promptbox-compact={showCompactLayout ? "" : undefined}
       data-promptbox-zen={showZenLayout ? "" : undefined}
       data-promptbox-voice-active={showVoiceActionGroup ? "" : undefined}
-      data-promptbox-working={isRunning || isSubmitting ? "" : undefined}
+      data-promptbox-typeahead-open={showTypeaheadMenu ? "" : undefined}
+      onAnimationEnd={handleBeamAnimationEnd}
       onSubmit={handleSubmit}
       onMouseDown={handlePromptBoxMouseDown}
       onDragOver={(event) => {
@@ -3278,7 +3321,7 @@ export function PromptBoxInternal({
           ) : null}
         </div>
       </div>
-      <span data-promptbox-beam-bloom="" aria-hidden="true" />
+      <span data-beam-bloom="" aria-hidden="true" />
     </form>
   );
 }
