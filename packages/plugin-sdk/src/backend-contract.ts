@@ -621,6 +621,19 @@ export interface PluginSharedPortTunnelIdentity {
   baseDomain: string;
 }
 
+export interface PluginHostCommandInput {
+  executable: string;
+  args: string[];
+  cwd: string | null;
+  timeoutMs: number;
+}
+
+export interface PluginHostCommandResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 export interface PluginHosts {
   /**
    * Ensure this enrolled host has a gate label and return its read-only public
@@ -638,6 +651,16 @@ export interface PluginHosts {
    * accepted here: it is owned by the daemon's trusted enrollment.
    */
   declareSharedPorts(hostId: string, ports: readonly number[]): void;
+
+  /**
+   * Run one manifest-declared executable on an enrolled host. The daemon uses
+   * that host user's ordinary shell environment; no credential value is sent
+   * through or persisted by the server.
+   */
+  experimental_runCommand(
+    hostId: string,
+    input: PluginHostCommandInput,
+  ): Promise<PluginHostCommandResult>;
 }
 
 // ---------------------------------------------------------------------------

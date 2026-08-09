@@ -3,6 +3,7 @@ import { defineRpcContract } from "@bb/plugin-sdk";
 import type { PluginRpcClient, PluginRpcHandlers } from "@bb/plugin-sdk";
 import { createFakePluginHost } from "@bb/plugin-sdk/testing";
 import {
+  default as githubPlugin,
   githubRpcContract,
   parsePaginatedGhApi,
   validateGithubCliArgs,
@@ -77,6 +78,65 @@ function assertGithubFrontendInference(
 }
 
 describe("GitHub RPC contract", () => {
+  it("discovers and authenticates repositories on their owning BB host", async () => {
+    const commands: Array<{
+      hostId: string;
+      executable: string;
+      args: string[];
+    }> = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github",
+      sdk: {
+        projects: {
+          list: () => [
+            {
+              id: "proj_remote",
+              sources: [
+                {
+                  id: "src_remote",
+                  projectId: "proj_remote",
+                  type: "local_path",
+                  hostId: "host_remote",
+                  path: "/work/repo",
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+      runHostCommand: async (hostId, input) => {
+        commands.push({ hostId, executable: input.executable, args: input.args });
+        return {
+          exitCode: 0,
+          stdout:
+            input.executable === "git" ? "git@github.com:get-bb/bb.git\n" : "",
+          stderr: "",
+        };
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      ghOk: true,
+      hosts: [{ hostId: "host_remote", ok: true, error: null }],
+      repos: [{ repo: "get-bb/bb", projectId: "proj_remote" }],
+    });
+    expect(commands).toEqual([
+      {
+        hostId: "host_remote",
+        executable: "git",
+        args: ["-C", "/work/repo", "remote", "get-url", "origin"],
+      },
+      {
+        hostId: "host_remote",
+        executable: "gh",
+        args: ["auth", "status"],
+      },
+    ]);
+    await harness.dispose();
+  });
+
   it("flattens every paginated GitHub API page", () => {
     expect(
       parsePaginatedGhApi(

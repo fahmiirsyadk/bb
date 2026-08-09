@@ -1043,6 +1043,13 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
         }
         return deps.ensureSharedPortTunnel(hostId);
       },
+      experimentalHostCommands: manifest.experimentalHostCommands,
+      runHostCommand: (hostId, input) => {
+        if (!deps.runHostCommand) {
+          throw new Error("host command execution is unavailable");
+        }
+        return deps.runHostCommand({ hostId, input, pluginId: row.id });
+      },
       validateSharedPortDeclaration: (hostId, ports) => {
         if (!deps.sharedPorts) {
           throw new Error("host shared-port control plane is unavailable");

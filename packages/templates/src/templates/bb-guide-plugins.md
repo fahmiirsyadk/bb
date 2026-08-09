@@ -354,7 +354,10 @@ least `icon` or `logo.light`, `bb.server`
 (backend entry, loaded as TypeScript — no build step), optional `bb.app`
 (frontend entry), optional `bb.skills` (static skill directories auto-imported
 into agent threads unless filtered by `bb.agents.configure`; default
-`skills/`), `engines.bb` (supported bb range),
+`skills/`), optional `bb.experimental_hostCommands` (executable basenames
+available through `bb.hosts.experimental_runCommand(hostId, { executable,
+args, cwd, timeoutMs })`; argv-only, no shell, with the selected machine
+user's environment), `engines.bb` (supported bb range),
 and optional `engines.bbPluginSdk` (supported plugin SDK range; scaffold
 writes `"^0.4.1"` for SDK 0.4.1). The plugin id is the package name minus
 `bb-plugin-`.

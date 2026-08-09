@@ -35,7 +35,8 @@ import {
   providerCliStatusResponseSchema,
 } from "./local.js";
 
-export const HOST_DAEMON_PROTOCOL_VERSION = 86 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 87 as const;
+export const PLUGIN_COMMAND_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
 
 export {
   BRANCH_LIST_LIMIT_MAX,
@@ -625,6 +626,34 @@ const hostCaffeinateCommandSchema = z
   .object({
     type: z.literal("host.caffeinate"),
     enabled: z.boolean(),
+  })
+  .strict();
+
+const pluginRunCommandSchema = z
+  .object({
+    type: z.literal("plugin.run_command"),
+    pluginId: z.string().min(1).max(128),
+    executable: z
+      .string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+      .max(128),
+    args: z
+      .array(z.string().max(1_000_000))
+      .max(256)
+      .refine(
+        (args) => args.reduce((total, arg) => total + arg.length, 0) <= 1_000_000,
+        "combined command arguments must not exceed 1000000 characters",
+      ),
+    cwd: z.string().min(1).nullable(),
+    timeoutMs: z.number().int().min(1_000).max(120_000),
+  })
+  .strict();
+
+const pluginRunCommandResultSchema = z
+  .object({
+    exitCode: z.number().int(),
+    stdout: z.string().max(PLUGIN_COMMAND_OUTPUT_MAX_BYTES),
+    stderr: z.string().max(PLUGIN_COMMAND_OUTPUT_MAX_BYTES),
   })
   .strict();
 
@@ -1793,6 +1822,15 @@ export const hostDaemonCommandRegistry = {
     type: "host.caffeinate",
     schema: hostCaffeinateCommandSchema,
     resultSchema: hostCaffeinateResultSchema,
+    transport: "onlineRpc",
+    retryable: false,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "plugin.run_command": defineHostDaemonCommandDescriptor({
+    type: "plugin.run_command",
+    schema: pluginRunCommandSchema,
+    resultSchema: pluginRunCommandResultSchema,
     transport: "onlineRpc",
     retryable: false,
     flushEventsBeforeResult: false,

@@ -2152,6 +2152,7 @@ function NewIssueForm({
 interface Status {
   ghOk: boolean;
   ghError: string | null;
+  hosts: Array<{ hostId: string; ok: boolean; error: string | null }>;
   repos: RepoInfo[];
   lastSyncedAt: string | null;
 }
@@ -2193,7 +2194,9 @@ function PanelHeader() {
           : status === null
             ? "Loading…"
             : status.ghOk
-              ? `${status.repos.length} repo${status.repos.length === 1 ? "" : "s"} · synced ${
+              ? `${status.repos.length} repo${status.repos.length === 1 ? "" : "s"} · ${
+                  status.hosts.length
+                } machine${status.hosts.length === 1 ? "" : "s"} · synced ${
                   status.lastSyncedAt !== null ? relativeTime(status.lastSyncedAt) : "never"
                 }`
               : "GitHub CLI not authenticated"}
@@ -2292,7 +2295,7 @@ function GithubPanelBody({
   if (status !== null && !status.ghOk) {
     return (
       <EmptyState
-        message={`GitHub CLI is not available or not authenticated. Install it from cli.github.com, run \`gh auth login\`, then reload the plugin. (${status.ghError ?? ""})`}
+        message={`GitHub CLI is not available or authenticated on one or more repository machines. Install it and run \`gh auth login\` on those machines, then reload the plugin. (${status.ghError ?? ""})`}
       />
     );
   }

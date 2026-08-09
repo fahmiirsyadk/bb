@@ -30,6 +30,7 @@ import { RuntimeManager } from "./runtime-manager.js";
 
 interface CommandRouterLogger extends Pick<HostDaemonLogger, "warn"> {
   debug?: HostDaemonLogger["debug"];
+  info?: HostDaemonLogger["info"];
 }
 
 type EnvironmentLaneMode = HostDaemonCommandEnvironmentLane;
@@ -154,7 +155,7 @@ export class CommandRouter {
     try {
       const result = await this.executeHostRpcCommand(message.command);
       this.logOnlineRpc({
-        commandType: message.command.type,
+        command: message.command,
         handlerMs: elapsedMs(handlerStartedAtMs),
         ok: true,
       });
@@ -177,7 +178,7 @@ export class CommandRouter {
         );
       }
       this.logOnlineRpc({
-        commandType: message.command.type,
+        command: message.command,
         errorCode,
         handlerMs: elapsedMs(handlerStartedAtMs),
         ok: false,
@@ -310,11 +311,27 @@ export class CommandRouter {
   }
 
   private logOnlineRpc(args: {
-    commandType: HostDaemonRpcCommand["type"];
+    command: HostDaemonRpcCommand;
     errorCode?: string;
     handlerMs: number;
     ok: boolean;
   }): void {
+    if (args.command.type === "plugin.run_command") {
+      const fields = {
+        commandType: args.command.type,
+        pluginId: args.command.pluginId,
+        executable: args.command.executable,
+        ...(args.errorCode ? { errorCode: args.errorCode } : {}),
+        handlerMs: roundDurationMs(args.handlerMs),
+        ok: args.ok,
+      };
+      if (this.logger.info) {
+        this.logger.info(fields, "Plugin host command");
+      } else {
+        this.logger.debug?.(fields, "Plugin host command");
+      }
+      return;
+    }
     const shouldLog =
       args.handlerMs >= HOST_COMMAND_LIFECYCLE_LOG_THRESHOLD_MS || !args.ok;
     if (!shouldLog) {
@@ -323,7 +340,7 @@ export class CommandRouter {
 
     this.logger.debug?.(
       {
-        commandType: args.commandType,
+        commandType: args.command.type,
         ...(args.errorCode ? { errorCode: args.errorCode } : {}),
         handlerMs: roundDurationMs(args.handlerMs),
         ok: args.ok,

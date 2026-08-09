@@ -102,6 +102,36 @@ describe("host control plane", () => {
     await harness.dispose();
     expect(harness.sharedPortDeclarations).toEqual([]);
   });
+
+  it("delegates experimental host commands to the configured machine runner", async () => {
+    const calls: unknown[] = [];
+    const { bb } = createFakePluginHost({
+      runHostCommand: async (hostId, input) => {
+        calls.push({ hostId, input });
+        return { exitCode: 0, stdout: "ok", stderr: "" };
+      },
+    });
+
+    await expect(
+      bb.hosts.experimental_runCommand("host-1", {
+        executable: "gh",
+        args: ["auth", "status"],
+        cwd: null,
+        timeoutMs: 10_000,
+      }),
+    ).resolves.toEqual({ exitCode: 0, stdout: "ok", stderr: "" });
+    expect(calls).toEqual([
+      {
+        hostId: "host-1",
+        input: {
+          executable: "gh",
+          args: ["auth", "status"],
+          cwd: null,
+          timeoutMs: 10_000,
+        },
+      },
+    ]);
+  });
 });
 
 describe("storage", () => {

@@ -268,6 +268,11 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
     enabled: true,
     supported: true,
   },
+  "plugin.run_command": {
+    exitCode: 0,
+    stdout: "ok\n",
+    stderr: "",
+  },
   "host.list_branches": {
     branches: ["main"],
     branchesTruncated: false,
@@ -1041,8 +1046,8 @@ describe("host-daemon local schemas", () => {
 describe("host-daemon command schemas", () => {
   // Version 86 includes native Windows metadata, empty ACP reasoning support,
   // and pending-turn session reports.
-  it("uses protocol version 86 for the combined host contract", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(86);
+  it("uses protocol version 87 for the combined host contract", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(87);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {

@@ -26,6 +26,8 @@ import type {
   PluginHttpAuthMode,
   PluginHttpHandler,
   PluginHosts,
+  PluginHostCommandInput,
+  PluginHostCommandResult,
   PluginSharedPortTunnelIdentity,
   PluginInteractionRequest,
   PluginInteractionResult,
@@ -478,6 +480,11 @@ export interface CreateFakePluginHostOptions {
   agentSkillIds?: readonly string[];
   /** Read-only identities returned by bb.hosts.ensureSharedPortTunnel. */
   sharedPortTunnelIdentities?: Record<string, PluginSharedPortTunnelIdentity>;
+  /** Executes bb.hosts.experimental_runCommand calls in tests. */
+  runHostCommand?: (
+    hostId: string,
+    input: PluginHostCommandInput,
+  ) => Promise<PluginHostCommandResult>;
 }
 
 export interface FakePluginHost {
@@ -1812,6 +1819,13 @@ function createFakePluginHostInternal(
       } else {
         sharedPortDeclarations[existingIndex] = replacement;
       }
+    },
+    experimental_runCommand(hostId, input) {
+      assertLive();
+      if (!options.runHostCommand) {
+        throw new Error("fake host command execution is not configured");
+      }
+      return options.runHostCommand(hostId, input);
     },
   };
   disposeHooks.push(() => {

@@ -71,7 +71,10 @@ import {
   createPluginCatalogService,
   type PluginCatalogService,
 } from "./services/plugin-catalog/plugin-catalog-service.js";
-import { callHostRetryableOnlineRpc } from "./services/hosts/online-rpc.js";
+import {
+  callHostOnlineRpc,
+  callHostRetryableOnlineRpc,
+} from "./services/hosts/online-rpc.js";
 import { browserRequestProblem } from "./browser-request-guard.js";
 
 export type CloseWebSockets = () => Promise<void>;
@@ -442,6 +445,19 @@ export function createApp(
           timeoutMs: 30_000,
         }),
       ),
+    runHostCommand: ({ hostId, input, pluginId }) =>
+      callHostOnlineRpc(deps, {
+        command: {
+          type: "plugin.run_command",
+          pluginId,
+          executable: input.executable,
+          args: input.args,
+          cwd: input.cwd,
+          timeoutMs: input.timeoutMs,
+        },
+        hostId,
+        timeoutMs: input.timeoutMs + 5_000,
+      }),
     watchBuiltinPluginSources:
       process.env.BB_MANAGED_DEV_BUILTIN_PLUGIN_HOT_RELOAD === "1",
   });

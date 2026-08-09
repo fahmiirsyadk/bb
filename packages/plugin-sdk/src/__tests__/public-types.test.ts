@@ -41,6 +41,8 @@ const EXPECTED_BACKEND_ROOT_TYPE_EXPORTS = [
   "PluginCliRegistration",
   "PluginCliResult",
   "PluginEvents",
+  "PluginHostCommandInput",
+  "PluginHostCommandResult",
   "PluginHosts",
   "PluginHttp",
   "PluginHttpAuthMode",

@@ -1,6 +1,10 @@
 import type { DbConnection } from "@bb/db";
 import type { DynamicTool, Thread } from "@bb/domain";
 import type { HostDaemonConnectTunnelIdentity } from "@bb/host-daemon-contract";
+import type {
+  PluginHostCommandInput,
+  PluginHostCommandResult,
+} from "@bb/plugin-sdk";
 import {
   pluginUpdateCheckEntrySchema,
   type InstalledPlugin,
@@ -77,6 +81,11 @@ export interface PluginServiceDeps {
   ensureSharedPortTunnel?: (
     hostId: string,
   ) => Promise<HostDaemonConnectTunnelIdentity>;
+  runHostCommand?: (args: {
+    hostId: string;
+    input: PluginHostCommandInput;
+    pluginId: string;
+  }) => Promise<PluginHostCommandResult>;
   /** Thread DTO assembly for lifecycle events + plugin-signal broadcast +
    * the `plugins-changed` system broadcast on lifecycle completion. */
   hub: Pick<

@@ -61,6 +61,11 @@ The manifest is `package.json`:
 - `bb.skills` (optional) — relocates the auto-imported skills directories
   (default `skills/`; `[]` opts out). Every `skills/<name>/SKILL.md` is
   injected into agent threads as the plugin skills tier.
+- `bb.experimental_hostCommands` (optional) — executable basenames the plugin
+  may invoke on an explicit enrolled machine through
+  `bb.hosts.experimental_runCommand`. Calls use argv arrays, never a shell,
+  and inherit that machine user's environment. Declare only the minimum
+  full-trust host capability.
 - `bb.themes` (optional) — contributes palettes to Settings → Appearance and
   `bb theme list`. Each entry is
   `{ id, name, description?, css: "./themes/name.css" }`; bb namespaces its

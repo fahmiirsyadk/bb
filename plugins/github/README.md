@@ -27,23 +27,27 @@ bb plugin install github
 
 ## Auth
 
-Uses the GitHub CLI. If `gh auth status` passes, the plugin works; otherwise
-it reports needs-configuration. No tokens are stored by the plugin.
+Uses the GitHub CLI on each repository's owning BB machine. Install `gh` and
+run `gh auth login` on that machine. The central BB server neither supplies nor
+stores the credential. Status is reported per machine.
 
 ## Which repos are tracked
 
 - Every BB project source whose checkout has a GitHub `origin` remote
   (repo → project mapping is also how spawn picks the project).
-- Plus the `extraRepos` setting: comma-separated `owner/repo` list.
-- `defaultProject` setting: where threads spawn for repos with no project.
+- Plus the `extraRepos` setting: comma-separated `owner/repo` list. These run
+  on the machine that owns the configured `defaultProject` source.
+- `defaultProject` setting: where threads spawn, and which machine handles
+  extra repositories that have no attached project source.
 
 ```
 bb plugin config github set extraRepos "owner/repo, owner/other"
 bb plugin reload github
 ```
 
-A background service refreshes the issue/PR cache every 5 minutes; the
-panel's Refresh button (or `bb github sync`) forces it.
+A background service refreshes an in-memory issue/PR cache every 5 minutes;
+GitHub content is not persisted in the central server's plugin database. The
+panel's Refresh button (or `bb github sync`) forces a refresh.
 
 ## Development
 

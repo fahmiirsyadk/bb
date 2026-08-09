@@ -38,7 +38,11 @@
       }
     },
     "server": "./server.ts",
-    "app": "./app.tsx"
+    "app": "./app.tsx",
+    "experimental_hostCommands": [
+      "gh",
+      "git"
+    ]
   },
   "keywords": [
     "bb-plugin"

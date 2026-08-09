@@ -32,6 +32,8 @@ import type {
   PluginHttpAuthMode,
   PluginHttpHandler,
   PluginHosts,
+  PluginHostCommandInput,
+  PluginHostCommandResult,
   PluginKvStorage,
   PluginLogger,
   PluginMentionItem,
@@ -85,6 +87,8 @@ export type {
   PluginHttpAuthMode,
   PluginHttpHandler,
   PluginHosts,
+  PluginHostCommandInput,
+  PluginHostCommandResult,
   PluginKvStorage,
   PluginLogger,
   PluginMentionItem,
@@ -126,6 +130,24 @@ export class PluginContextStaleError extends Error {
     this.name = "PluginContextStaleError";
   }
 }
+
+const pluginHostCommandInputSchema: z.ZodType<PluginHostCommandInput> = z
+  .object({
+    executable: z
+      .string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+      .max(128),
+    args: z
+      .array(z.string().max(1_000_000))
+      .max(256)
+      .refine(
+        (args) => args.reduce((total, arg) => total + arg.length, 0) <= 1_000_000,
+        "combined command arguments must not exceed 1000000 characters",
+      ),
+    cwd: z.string().min(1).nullable(),
+    timeoutMs: z.number().int().min(1_000).max(120_000),
+  })
+  .strict();
 
 /**
  * Thrown from a background service's `start()` to mark the plugin
@@ -534,6 +556,11 @@ export function createPluginApi(options: {
     signal?: AbortSignal;
   }) => Promise<PluginInteractionResult>;
   ensureSharedPortTunnel: PluginHosts["ensureSharedPortTunnel"];
+  experimentalHostCommands: readonly string[];
+  runHostCommand: (
+    hostId: string,
+    input: PluginHostCommandInput,
+  ) => Promise<PluginHostCommandResult>;
   validateSharedPortDeclaration: (
     hostId: string,
     ports: readonly number[],
@@ -559,6 +586,8 @@ export function createPluginApi(options: {
     reportAgentToolProblem,
     requestInteraction,
     ensureSharedPortTunnel,
+    experimentalHostCommands,
+    runHostCommand,
     validateSharedPortDeclaration,
     declareSharedPorts,
     replaceDeclaredSharedPorts,
@@ -1261,6 +1290,17 @@ export function createPluginApi(options: {
           validateSharedPortDeclaration(hostId, ports),
         );
       }
+    },
+    experimental_runCommand(hostId, input) {
+      assertLive();
+      const normalizedHostId = z.string().min(1).parse(hostId);
+      const parsedInput = pluginHostCommandInputSchema.parse(input);
+      if (!experimentalHostCommands.includes(parsedInput.executable)) {
+        throw new Error(
+          `plugin "${pluginId}" did not declare host executable "${parsedInput.executable}"`,
+        );
+      }
+      return runHostCommand(normalizedHostId, parsedInput);
     },
   };
   const events: PluginEvents = {

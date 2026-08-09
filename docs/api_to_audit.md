@@ -5,6 +5,23 @@ entry here (see [AGENTS.md](../AGENTS.md), "Plugin API"). Dropping the prefix
 is the deliberate stabilization step: audit the entry, rename project-wide,
 and delete the entry in the same change.
 
+## `bb.hosts.experimental_runCommand` / `bb.experimental_hostCommands`
+
+Runs one manifest-declared executable on an explicit enrolled host through the
+daemon's typed online RPC channel. Arguments are an argv array (never a shell
+command); cwd and timeout are explicit. The command inherits the selected
+host user's environment, keeping CLI credentials off the BB server.
+
+Before stabilization, audit:
+
+- whether installing a plugin that declares host commands needs a separate
+  per-machine consent step or permission tier;
+- whether executable-name declarations are sufficiently narrow, or should be
+  replaced by versioned plugin-owned host workers/operation schemas;
+- output limits, cancellation, concurrency, audit logging, and redaction;
+- authorization when several BB users share one server or one daemon;
+- Windows executable resolution and daemon service PATH behavior.
+
 ## `PluginContentScriptContext.experimental_setThreadRowStatus`
 
 Lets a plugin-lifetime content script set or clear one of its own status

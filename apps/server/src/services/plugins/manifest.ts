@@ -37,6 +37,8 @@ export interface PluginManifest {
   serverEntry: string;
   /** Absolute path of the frontend entry file, when declared. */
   appEntry: string | undefined;
+  /** Host executables this full-trust plugin may invoke through the daemon. */
+  experimentalHostCommands: string[];
   /** CSS palettes declared by `bb.themes`, with manifest-relative paths resolved. */
   themes: Array<{
     id: string;
@@ -263,6 +265,7 @@ export async function readPluginManifest(
     bbPluginSdkRange: engines?.bbPluginSdk,
     serverEntry,
     appEntry: bb.app ? resolveEntry(rootDir, bb.app, "bb.app") : undefined,
+    experimentalHostCommands: [...new Set(bb.experimental_hostCommands ?? [])],
     themes,
     skillsRootPaths,
     skillNames: await readSkillNames(skillsRootPaths),

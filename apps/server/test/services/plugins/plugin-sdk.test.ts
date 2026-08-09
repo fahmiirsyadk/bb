@@ -29,7 +29,11 @@ const logger = testLogger as unknown as Logger;
 
 async function writePlugin(
   dir: string,
-  options: { name: string; serverSource: string },
+  options: {
+    name: string;
+    serverSource: string;
+    experimentalHostCommands?: string[];
+  },
 ): Promise<string> {
   const rootDir = join(dir, options.name);
   await mkdir(rootDir, { recursive: true });
@@ -43,6 +47,11 @@ async function writePlugin(
         description: "Plugin SDK fixture.",
         branding: { icon: "Zap" },
         server: "./server.ts",
+        ...(options.experimentalHostCommands === undefined
+          ? {}
+          : {
+              experimental_hostCommands: options.experimentalHostCommands,
+            }),
       },
     }),
   );
@@ -72,6 +81,11 @@ describe("plugin bb.sdk bind gate", () => {
     label: "sawyer-air",
     baseDomain: "getbb.app",
   });
+  const runHostCommand = vi.fn().mockResolvedValue({
+    exitCode: 0,
+    stdout: "ok",
+    stderr: "",
+  });
 
   beforeEach(async () => {
     db = createConnection(":memory:");
@@ -82,10 +96,12 @@ describe("plugin bb.sdk bind gate", () => {
     sharedPorts.replaceDeclarationsForOwner.mockClear();
     sharedPorts.clearDeclarationsForOwner.mockClear();
     ensureSharedPortTunnel.mockClear();
+    runHostCommand.mockClear();
     service = createPluginService({
       db,
       sharedPorts,
       ensureSharedPortTunnel,
+      runHostCommand,
       hub: {
         getDaemonSessionIdForHost: () => null,
         notifyPluginSignal: () => 0,
@@ -162,6 +178,44 @@ describe("plugin bb.sdk bind gate", () => {
     expect(sharedPorts.clearDeclarationsForOwner).toHaveBeenCalledWith(
       "shares",
     );
+  });
+
+  it("allows only manifest-declared host executables", async () => {
+    const rootDir = await writePlugin(workDir, {
+      name: "bb-plugin-host-command",
+      serverSource: `export default function plugin() {}`,
+      experimentalHostCommands: ["gh"],
+    });
+    await service.installPath(rootDir);
+    const api = requireApi(service, "host-command");
+
+    await expect(
+      api.hosts.experimental_runCommand("host-1", {
+        executable: "gh",
+        args: ["auth", "status"],
+        cwd: null,
+        timeoutMs: 10_000,
+      }),
+    ).resolves.toEqual({ exitCode: 0, stdout: "ok", stderr: "" });
+    expect(runHostCommand).toHaveBeenCalledWith({
+      hostId: "host-1",
+      input: {
+        executable: "gh",
+        args: ["auth", "status"],
+        cwd: null,
+        timeoutMs: 10_000,
+      },
+      pluginId: "host-command",
+    });
+
+    expect(() =>
+      api.hosts.experimental_runCommand("host-1", {
+        executable: "git",
+        args: ["status"],
+        cwd: null,
+        timeoutMs: 10_000,
+      }),
+    ).toThrow('did not declare host executable "git"');
   });
 
   it("does not publish candidate host declarations when reload fails", async () => {

@@ -50,6 +50,15 @@ export const pluginBbManifestSchema = z
     branding: pluginBrandingSchema,
     server: requiredManifestString,
     app: requiredManifestString.optional(),
+    experimental_hostCommands: z
+      .array(
+        z
+          .string()
+          .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+          .max(128),
+      )
+      .max(32)
+      .optional(),
     skills: z.array(requiredManifestString).optional(),
     themes: z
       .array(
