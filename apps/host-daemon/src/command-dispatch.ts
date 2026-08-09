@@ -51,7 +51,10 @@ import {
 } from "./command-handlers/path-mutations.js";
 import { resolveInteractiveRequest } from "./command-handlers/interactive.js";
 import { pickHostFolder } from "./command-handlers/native-folder-picker.js";
-import { runPluginCommand } from "./command-handlers/plugin-command.js";
+import {
+  buildPluginCommandEnv,
+  runPluginCommand,
+} from "./command-handlers/plugin-command.js";
 import {
   completeCodexInference,
   transcribeCodexVoice,
@@ -447,7 +450,10 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.caffeinate": async (command, options) =>
     getCaffeinateManager(options).setEnabled(command.enabled),
   "plugin.run_command": async (command, options) =>
-    runPluginCommand(command, options.runtimeManager.getShellEnv()),
+    runPluginCommand(
+      command,
+      buildPluginCommandEnv(options.runtimeManager.getShellEnv()),
+    ),
   "host.list_commands": listHostCommands,
   "host.list_skills": listHostSkills,
   "host.delete_skill": deleteHostSkill,

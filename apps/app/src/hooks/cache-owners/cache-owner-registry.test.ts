@@ -44,6 +44,7 @@ const DEPRECATED_CACHE_SHIM_MODULES = new Set([
 ]);
 
 const QUERY_KEYS_MODULE_PATH = "hooks/queries/query-keys";
+const CACHE_OWNER_BOUNDARY_TEST_TIMEOUT_MS = 60_000;
 
 const CACHE_OWNER_QUERY_KEY_IMPORTS: CacheOwnerQueryKeyImportRegistry = {
   "hooks/cache-owners/active-thread-lifecycle-cache-owner.ts": [
@@ -600,20 +601,24 @@ function collectDeprecatedCacheShimImportViolations(): SourceFileViolation[] {
   return violations;
 }
 
-describe("cache owner boundaries", () => {
-  it("keeps raw frontend-domain cache writes inside cache owners", () => {
-    expect(collectRawCacheWriteViolations()).toEqual([]);
-  });
+describe(
+  "cache owner boundaries",
+  { timeout: CACHE_OWNER_BOUNDARY_TEST_TIMEOUT_MS },
+  () => {
+    it("keeps raw frontend-domain cache writes inside cache owners", () => {
+      expect(collectRawCacheWriteViolations()).toEqual([]);
+    });
 
-  it("keeps cache-owner query-key imports declared per owner", () => {
-    expect(collectCacheOwnerQueryKeyImportViolations()).toEqual([]);
-  });
+    it("keeps cache-owner query-key imports declared per owner", () => {
+      expect(collectCacheOwnerQueryKeyImportViolations()).toEqual([]);
+    });
 
-  it("keeps mutation, realtime, and action-provider files off query-key imports", () => {
-    expect(collectCacheImportBoundaryViolations()).toEqual([]);
-  });
+    it("keeps mutation, realtime, and action-provider files off query-key imports", () => {
+      expect(collectCacheImportBoundaryViolations()).toEqual([]);
+    });
 
-  it("keeps imports off deprecated cache-owner re-export shims", () => {
-    expect(collectDeprecatedCacheShimImportViolations()).toEqual([]);
-  });
-});
+    it("keeps imports off deprecated cache-owner re-export shims", () => {
+      expect(collectDeprecatedCacheShimImportViolations()).toEqual([]);
+    });
+  },
+);

@@ -4,12 +4,22 @@ import type {
   HostDaemonOnlineRpcResult,
 } from "@bb/host-daemon-contract";
 import { PLUGIN_COMMAND_OUTPUT_MAX_BYTES } from "@bb/host-daemon-contract";
-
+import { sanitizeInheritedChildProcessEnv } from "@bb/process-utils";
 
 type PluginRunCommand = Extract<
   HostDaemonOnlineRpcCommand,
   { type: "plugin.run_command" }
 >;
+
+export function buildPluginCommandEnv(
+  runtimeShellEnv: NodeJS.ProcessEnv,
+  inheritedEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...sanitizeInheritedChildProcessEnv({ env: inheritedEnv }),
+    ...runtimeShellEnv,
+  };
+}
 
 export function runPluginCommand(
   command: PluginRunCommand,

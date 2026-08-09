@@ -170,6 +170,7 @@ function createConnectionFixture(args: ConnectionFixtureArgs = {}) {
     hostName: "Server Connection Test Host",
     hostType: "persistent",
     instanceId: "instance-server-connection-test",
+    localApiPort: null,
     logger,
     ...(args.machineCredential !== undefined
       ? { machineCredential: args.machineCredential }

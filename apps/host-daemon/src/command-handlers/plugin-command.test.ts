@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { runPluginCommand } from "./plugin-command.js";
+import { buildPluginCommandEnv, runPluginCommand } from "./plugin-command.js";
 
 describe("runPluginCommand", () => {
+  it("preserves user profile variables while runtime-owned values win", () => {
+    expect(
+      buildPluginCommandEnv(
+        { PATH: "runtime-path", BB_SERVER_URL: "https://bb.example" },
+        {
+          APPDATA: "C:\\Users\\test\\AppData\\Roaming",
+          LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+          USERPROFILE: "C:\\Users\\test",
+          GH_CONFIG_DIR: "C:\\Users\\test\\gh",
+          PATH: "inherited-path",
+          BB_SERVER_URL: "https://stale.example",
+          NODE_ENV: "development",
+        },
+      ),
+    ).toEqual({
+      APPDATA: "C:\\Users\\test\\AppData\\Roaming",
+      LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+      USERPROFILE: "C:\\Users\\test",
+      GH_CONFIG_DIR: "C:\\Users\\test\\gh",
+      PATH: "runtime-path",
+      BB_SERVER_URL: "https://bb.example",
+    });
+  });
+
   it("uses argv execution and the host environment without a shell", async () => {
     const result = await runPluginCommand(
       {

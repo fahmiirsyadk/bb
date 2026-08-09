@@ -94,6 +94,7 @@ export const hostDaemonSessionOpenRequestSchema = z.object({
   hasMachineCredential: z.boolean(),
   platform: hostPlatformSchema,
   dataDir: z.string().min(1),
+  localApiPort: z.number().int().min(1).max(65535).nullable().default(null),
   // Accept any version at the schema boundary so the server can return an
   // actionable protocol mismatch instead of an opaque validation failure.
   protocolVersion: z.number().int().positive(),

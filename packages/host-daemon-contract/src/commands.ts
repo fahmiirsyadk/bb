@@ -35,7 +35,7 @@ import {
   providerCliStatusResponseSchema,
 } from "./local.js";
 
-export const HOST_DAEMON_PROTOCOL_VERSION = 87 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 88 as const;
 export const PLUGIN_COMMAND_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
 
 export {
@@ -641,7 +641,8 @@ const pluginRunCommandSchema = z
       .array(z.string().max(1_000_000))
       .max(256)
       .refine(
-        (args) => args.reduce((total, arg) => total + arg.length, 0) <= 1_000_000,
+        (args) =>
+          args.reduce((total, arg) => total + arg.length, 0) <= 1_000_000,
         "combined command arguments must not exceed 1000000 characters",
       ),
     cwd: z.string().min(1).nullable(),

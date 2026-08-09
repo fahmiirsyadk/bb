@@ -166,6 +166,7 @@ export function registerSystemRoutes(
       pluginThemes: pluginService.listThemes(),
       featureFlags: deps.config.featureFlags,
       hostDaemonPort: deps.config.hostDaemonPort,
+      hostDaemonPorts: deps.hub.listDaemonLocalApiPorts(),
       serverUrl,
       primaryHostId,
       primaryHostPlatform:

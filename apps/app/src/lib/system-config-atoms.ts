@@ -23,6 +23,7 @@ const unavailableSystemConfig: SystemConfigResponse = {
   pluginThemes: [],
   featureFlags: { placeholder: false, timelineWindowEventBudget: 1_500 },
   hostDaemonPort: null,
+  hostDaemonPorts: [],
   serverUrl: "",
   primaryHostId: null,
   primaryHostPlatform: null,
@@ -36,6 +37,23 @@ type Milliseconds = number;
 interface FetchHostStatusWithRetryArgs {
   port: number;
   retryDelaysMs: readonly Milliseconds[];
+}
+
+interface LocalHostDaemonSnapshot {
+  port: number;
+  status: HostDaemonStatusSnapshot;
+}
+
+interface FindLocalHostDaemonSnapshotArgs {
+  advertisedPorts: readonly number[];
+  fallbackPort: number | null;
+  serverUrl: string;
+  fetchAdvertisedStatus: (
+    port: number,
+  ) => Promise<HostDaemonStatusSnapshot | null>;
+  fetchFallbackStatus: (
+    port: number,
+  ) => Promise<HostDaemonStatusSnapshot | null>;
 }
 
 const LOCAL_HOST_STATUS_RETRY_DELAYS_MS: readonly Milliseconds[] = [
@@ -113,8 +131,9 @@ systemConfigRefreshTickAtom.onMount = (setRefreshTick) => {
   });
   const unsubscribeChanged = wsManager.onChanged((message) => {
     if (
-      message.entity === "system" &&
-      message.changes.includes("config-changed")
+      (message.entity === "system" &&
+        message.changes.includes("config-changed")) ||
+      message.entity === "host"
     ) {
       setRefreshTick((count) => count + 1);
     }
@@ -157,18 +176,64 @@ localHostStatusRefreshTickAtom.onMount = (setRefreshTick) => {
   };
 };
 
+export async function findLocalHostDaemonSnapshot(
+  args: FindLocalHostDaemonSnapshotArgs,
+): Promise<LocalHostDaemonSnapshot | null> {
+  const advertisedPorts = args.advertisedPorts;
+  const ports =
+    advertisedPorts.length > 0
+      ? advertisedPorts
+      : args.fallbackPort === null
+        ? []
+        : [args.fallbackPort];
+  for (const port of ports) {
+    const status =
+      advertisedPorts.length > 0
+        ? await args.fetchAdvertisedStatus(port)
+        : await args.fetchFallbackStatus(port);
+    if (status === null) continue;
+    if (
+      args.serverUrl.length > 0 &&
+      normalizeServerUrl(status.serverUrl) !==
+        normalizeServerUrl(args.serverUrl)
+    ) {
+      continue;
+    }
+    return { port, status };
+  }
+  return null;
+}
+
 /** The local daemon status, or null if no daemon is reachable. */
-export const localHostStatusAtom = atom<
-  Promise<HostDaemonStatusSnapshot | null>
+const localHostDaemonSnapshotAtom = atom<
+  Promise<LocalHostDaemonSnapshot | null>
 >(async (get) => {
   get(localHostStatusRefreshTickAtom);
-  const port = await get(hostDaemonPortAtom);
-  if (!port) return null;
-  return fetchHostStatusWithRetry({
-    port,
-    retryDelaysMs: LOCAL_HOST_STATUS_RETRY_DELAYS_MS,
+  const config = await get(systemConfigAtom);
+  return findLocalHostDaemonSnapshot({
+    advertisedPorts: config.hostDaemonPorts,
+    fallbackPort: config.hostDaemonPort,
+    serverUrl: config.serverUrl,
+    fetchAdvertisedStatus: fetchHostStatus,
+    fetchFallbackStatus: (port) =>
+      fetchHostStatusWithRetry({
+        port,
+        retryDelaysMs: LOCAL_HOST_STATUS_RETRY_DELAYS_MS,
+      }),
   });
 });
+
+function normalizeServerUrl(value: string): string {
+  try {
+    return new URL(value).href.replace(/\/$/u, "");
+  } catch {
+    return value.replace(/\/$/u, "");
+  }
+}
+
+export const localHostStatusAtom = atom<
+  Promise<HostDaemonStatusSnapshot | null>
+>(async (get) => (await get(localHostDaemonSnapshotAtom))?.status ?? null);
 
 /** Whether the local host daemon API is reachable. */
 export const localHostDaemonReachableAtom = atom<Promise<boolean>>(
@@ -204,12 +269,12 @@ export const localWorkspaceOpenTargetsAtom = atom<
     return [];
   }
 
-  const port = await get(hostDaemonPortAtom);
-  if (!port) {
+  const daemon = await get(localHostDaemonSnapshotAtom);
+  if (!daemon) {
     return [];
   }
 
-  return fetchWorkspaceOpenTargets(port);
+  return fetchWorkspaceOpenTargets(daemon.port);
 });
 
 // ---------------------------------------------------------------------------
@@ -222,6 +287,5 @@ export const localWorkspaceOpenTargetsAtom = atom<
  * so a remote app origin still probes this client's `127.0.0.1`.
  */
 export const hostDaemonPortAtom = atom<Promise<number | null>>(async (get) => {
-  const config = await get(systemConfigAtom);
-  return config.hostDaemonPort;
+  return (await get(localHostDaemonSnapshotAtom))?.port ?? null;
 });

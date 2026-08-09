@@ -214,6 +214,7 @@ export const systemConfigResponseSchema = z.object({
   pluginThemes: z.array(pluginThemeMetaSchema),
   featureFlags: featureFlagsSchema,
   hostDaemonPort: z.number().nullable(),
+  hostDaemonPorts: z.array(z.number().int().min(1).max(65535)),
   /** Base URL external host daemons should use to reach this server. */
   serverUrl: z.string().url(),
   /**

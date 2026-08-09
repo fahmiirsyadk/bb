@@ -151,6 +151,10 @@ export class NotificationHub implements DbNotifier {
     string,
     HostPlatform
   >();
+  private readonly daemonSessionLocalApiPortsBySessionId = new Map<
+    string,
+    number | null
+  >();
   private readonly daemonRegistrationWaiters = new Map<
     string,
     Set<DaemonRegistrationWaiter>
@@ -453,6 +457,13 @@ export class NotificationHub implements DbNotifier {
     this.daemonSessionPlatformsBySessionId.set(sessionId, platform);
   }
 
+  recordDaemonSessionLocalApiPort(
+    sessionId: string,
+    localApiPort: number | null,
+  ): void {
+    this.daemonSessionLocalApiPortsBySessionId.set(sessionId, localApiPort);
+  }
+
   registerDaemon(sessionId: string, hostId: string, socket: HubSocket): void {
     this.cancelPendingDaemonDisconnect(sessionId);
     const existingSessionId = this.daemonSessionIdsByHost.get(hostId);
@@ -482,6 +493,7 @@ export class NotificationHub implements DbNotifier {
     }
     this.daemonSessions.delete(sessionId);
     this.daemonSessionPlatformsBySessionId.delete(sessionId);
+    this.daemonSessionLocalApiPortsBySessionId.delete(sessionId);
     this.rejectHostOnlineRpcWaitersForSession(sessionId);
     if (this.daemonSessionIdsByHost.get(entry.hostId) === sessionId) {
       this.daemonSessionIdsByHost.delete(entry.hostId);
@@ -507,6 +519,20 @@ export class NotificationHub implements DbNotifier {
       return null;
     }
     return this.daemonSessions.get(sessionId)?.platform ?? null;
+  }
+
+  listDaemonLocalApiPorts(): number[] {
+    return [
+      ...new Set(
+        [...this.daemonSessionIdsByHost.values()]
+          .map((sessionId) =>
+            this.daemonSessionLocalApiPortsBySessionId.get(sessionId),
+          )
+          .filter(
+            (port): port is number => port !== undefined && port !== null,
+          ),
+      ),
+    ].sort((left, right) => left - right);
   }
 
   async waitForDaemonForHost(

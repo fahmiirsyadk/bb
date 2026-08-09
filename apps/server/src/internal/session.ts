@@ -99,6 +99,10 @@ export function registerInternalSessionRoutes(app: Hono, deps: AppDeps): void {
         leaseTimeoutMs: LEASE_TIMEOUT_MS,
       });
       deps.hub.recordDaemonSessionPlatform(session.id, payload.platform);
+      deps.hub.recordDaemonSessionLocalApiPort(
+        session.id,
+        payload.localApiPort,
+      );
       deps.sharedPorts.recordHostConnectCapability({
         hostId: daemon.hostId,
         sessionId: session.id,

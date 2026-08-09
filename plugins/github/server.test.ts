@@ -106,7 +106,11 @@ describe("GitHub RPC contract", () => {
         },
       },
       runHostCommand: async (hostId, input) => {
-        commands.push({ hostId, executable: input.executable, args: input.args });
+        commands.push({
+          hostId,
+          executable: input.executable,
+          args: input.args,
+        });
         return {
           exitCode: 0,
           stdout:
@@ -164,6 +168,57 @@ describe("GitHub RPC contract", () => {
       repositories: [],
     });
     expect(harness.needsConfigurationMessages).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("uses the machine name in host command errors", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-machine-error-name",
+      sdk: {
+        hosts: {
+          get: () => ({ id: "host_remote", name: "void-PC" }),
+        },
+        projects: {
+          list: () => [
+            {
+              id: "proj_remote",
+              sources: [
+                {
+                  id: "src_remote",
+                  projectId: "proj_remote",
+                  type: "local_path" as const,
+                  hostId: "host_remote",
+                  path: "/work/repo",
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+      runHostCommand: async (_hostId, input) =>
+        input.executable === "git"
+          ? {
+              exitCode: 0,
+              stdout: "https://github.com/acme/repo.git\n",
+              stderr: "",
+            }
+          : {
+              exitCode: 1,
+              stdout: "",
+              stderr: "unexpected gh failure",
+            },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      hosts: [
+        expect.objectContaining({
+          hostId: "host_remote",
+          detail: expect.stringContaining("void-PC"),
+        }),
+      ],
+    });
     await harness.dispose();
   });
 
@@ -398,7 +453,11 @@ describe("GitHub RPC contract", () => {
       sdk: { projects: { list: () => projects } },
       runHostCommand: async (_hostId, input) => {
         if (input.executable === "git") {
-          return { exitCode: 0, stdout: "https://github.com/acme/repo.git\n", stderr: "" };
+          return {
+            exitCode: 0,
+            stdout: "https://github.com/acme/repo.git\n",
+            stderr: "",
+          };
         }
         if (input.args[0] === "auth" && !authenticated) {
           return { exitCode: 1, stdout: "not logged in\n", stderr: "" };
@@ -493,7 +552,9 @@ describe("GitHub RPC contract", () => {
     await harness.callRpc("refresh", null);
     offline = true;
     await harness.callRpc("refresh", null);
-    await expect(harness.callRpc("listItems", { kind: "issue" })).resolves.toMatchObject({
+    await expect(
+      harness.callRpc("listItems", { kind: "issue" }),
+    ).resolves.toMatchObject({
       items: [expect.objectContaining({ repo: "acme/ready", number: 7 })],
     });
     await expect(harness.callRpc("status", null)).resolves.toMatchObject({
@@ -540,7 +601,11 @@ describe("GitHub RPC contract", () => {
       sdk: { projects: { list: () => projects } },
       runHostCommand: async (_hostId, input) =>
         input.executable === "git"
-          ? { exitCode: 0, stdout: "https://example.com/not-github.git\n", stderr: "" }
+          ? {
+              exitCode: 0,
+              stdout: "https://example.com/not-github.git\n",
+              stderr: "",
+            }
           : { exitCode: 0, stdout: "", stderr: "" },
     });
 

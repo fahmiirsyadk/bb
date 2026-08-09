@@ -773,6 +773,7 @@ export async function createHostDaemonApp(
     hostType: options.hostType,
     dataDir: options.dataDir,
     instanceId: options.instanceId,
+    localApiPort: options.localApiConfig?.port ?? null,
     logger: options.logger,
     machineCredential: options.machineCredential,
     connectMachineId: options.connectMachineId,

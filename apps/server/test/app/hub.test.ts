@@ -286,6 +286,20 @@ describe("NotificationHub", () => {
     }
   });
 
+  it("lists local API ports only for active daemon sessions", () => {
+    const hub = new NotificationHub();
+    hub.recordDaemonSessionLocalApiPort("session-1", 38888);
+    hub.recordDaemonSessionLocalApiPort("session-2", 38889);
+    hub.recordDaemonSessionLocalApiPort("session-pending", 38890);
+    hub.registerDaemon("session-1", "host-1", createMockHubSocket());
+    hub.registerDaemon("session-2", "host-2", createMockHubSocket());
+
+    expect(hub.listDaemonLocalApiPorts()).toEqual([38888, 38889]);
+
+    hub.unregisterDaemon("session-1");
+    expect(hub.listDaemonLocalApiPorts()).toEqual([38889]);
+  });
+
   it("sends host RPC requests to the active daemon and resolves responses", async () => {
     const hub = new NotificationHub();
     const socket = createMockHubSocket();

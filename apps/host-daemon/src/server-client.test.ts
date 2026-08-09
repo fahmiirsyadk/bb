@@ -65,6 +65,7 @@ describe("createServerClient", () => {
       hostType: "persistent",
       dataDir: "/tmp/bb",
       instanceId: "instance-1",
+      localApiPort: null,
       activeThreads: [],
       loadedEnvironments: [],
     });
@@ -109,6 +110,7 @@ describe("createServerClient", () => {
         hostType: "persistent",
         dataDir: "/tmp/bb",
         instanceId: "instance-1",
+        localApiPort: null,
         activeThreads: [],
         loadedEnvironments: [],
       });
