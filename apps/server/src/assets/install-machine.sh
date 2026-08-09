@@ -287,12 +287,13 @@ package_url="${server_url%/}/install/bb-app.tgz"
 package_dir=$(mktemp -d "${TMPDIR:-/tmp}/bb-app.XXXXXX")
 package_file="$package_dir/bb-app.tgz"
 package_status=$(curl -sS -L -o "$package_file" -w '%{http_code}' "$package_url" 2>/dev/null) || package_status=000
+npm_install_script_allow_list='@parcel/watcher,better-sqlite3,node-pty,@google/genai,protobufjs'
 
 bb_app=
 if [ "$package_status" -ge 200 ] && [ "$package_status" -lt 300 ]; then
   require_npm
   echo "Installing the server's bb-app build..."
-  if ! npm install -g "$package_file"; then
+  if ! npm install -g "--allow-scripts=$npm_install_script_allow_list" "$package_file"; then
     rm -rf "$package_dir"
     echo "Could not install bb-app globally. Fix npm global-install permissions, then rerun this command." >&2
     exit 1
@@ -311,7 +312,7 @@ elif command -v bb-app >/dev/null 2>&1; then
 elif [ "$package_status" = 404 ]; then
   require_npm
   echo "The server does not provide its bb-app package; installing bb-app from the npm registry..."
-  if ! npm install -g bb-app; then
+  if ! npm install -g "--allow-scripts=$npm_install_script_allow_list" bb-app; then
     rm -rf "$package_dir"
     echo "Could not install bb-app globally. Fix npm global-install permissions, then rerun this command." >&2
     exit 1

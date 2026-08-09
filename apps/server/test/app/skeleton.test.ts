@@ -73,6 +73,20 @@ describe("server skeleton", () => {
     });
   });
 
+  it("allows bb-app native install scripts in the Windows machine installer", () => {
+    const script = readFileSync(
+      new URL("../../src/assets/install-machine.ps1", import.meta.url),
+      "utf8",
+    );
+
+    expect(script).toContain(
+      '$npmInstallScriptAllowList = "@parcel/watcher,better-sqlite3,node-pty,@google/genai,protobufjs"',
+    );
+    expect(
+      script.match(/--allow-scripts=\$npmInstallScriptAllowList/g),
+    ).toHaveLength(2);
+  });
+
   it("serves install version metadata without auth", async () => {
     const harness = await createTestAppHarness();
     const { app } = createApp(harness.deps, {

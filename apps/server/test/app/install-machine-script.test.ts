@@ -344,7 +344,9 @@ describe("machine install script", () => {
       join(fixture.dataDir, "npm.log"),
       "utf8",
     );
-    expect(npmInvocation).toMatch(/^install -g \/.*bb-app\..*\.tgz$/mu);
+    expect(npmInvocation).toMatch(
+      /^install -g --allow-scripts=@parcel\/watcher,better-sqlite3,node-pty,@google\/genai,protobufjs \/.*bb-app\..*\.tgz$/mu,
+    );
     const daemonPid = Number(
       readFileSync(join(fixture.dataDir, "install-daemon.pid"), "utf8"),
     );
@@ -382,7 +384,9 @@ describe("machine install script", () => {
       join(fixture.dataDir, "npm.log"),
       "utf8",
     );
-    expect(npmInvocation).toMatch(/^install -g \/.*bb-app\..*\.tgz$/mu);
+    expect(npmInvocation).toMatch(
+      /^install -g --allow-scripts=@parcel\/watcher,better-sqlite3,node-pty,@google\/genai,protobufjs \/.*bb-app\..*\.tgz$/mu,
+    );
     expect(npmInvocation).not.toContain("bb-app\n");
     const daemonPid = Number(
       readFileSync(join(fixture.dataDir, "install-daemon.pid"), "utf8"),
@@ -399,7 +403,7 @@ describe("machine install script", () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(readFileSync(join(fixture.dataDir, "npm.log"), "utf8")).toBe(
-      "install -g bb-app\n",
+      "install -g --allow-scripts=@parcel/watcher,better-sqlite3,node-pty,@google/genai,protobufjs bb-app\n",
     );
     const daemonPid = Number(
       readFileSync(join(fixture.dataDir, "install-daemon.pid"), "utf8"),
