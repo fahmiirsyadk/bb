@@ -284,7 +284,7 @@ export function MachinesSettingsSection() {
                       retryHostUpdate.mutate(host.id, {
                         onSuccess: () => {
                           appToast.success(
-                            `Update retry requested for ${host.name}`,
+                            `Update retry queued for ${host.name}. It will install when the agent reconnects.`,
                           );
                         },
                       })
@@ -340,10 +340,11 @@ export function MachinesSettingsSection() {
             <DialogHeader>
               <DialogTitle>Remove {removeTarget.name}?</DialogTitle>
               <DialogDescription>
-                This revokes {removeTarget.name}'s access to this server.
-                Project checkouts stay on its disk, but its environments become
-                read-only history and it can't run new work until it's paired
-                again.
+                This immediately revokes {removeTarget.name}'s server access,
+                but does not uninstall its local bb agent. Project checkouts
+                stay on disk and its environments become read-only history. To
+                reconnect it later, choose Add a machine and run the new
+                installer; it replaces the old enrollment automatically.
               </DialogDescription>
             </DialogHeader>
             {removeHost.isError ? (
@@ -365,7 +366,7 @@ export function MachinesSettingsSection() {
                   })
                 }
               >
-                Remove machine
+                Remove server access
               </Button>
             </DialogFooter>
           </>

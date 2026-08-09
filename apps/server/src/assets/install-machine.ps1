@@ -61,6 +61,8 @@ if ($parsedNodeVersion -lt [Version]"22.19.0") {
 }
 
 $serverHost = $serverUri.Host -replace "[^A-Za-z0-9.-]", "-"
+$slug = $serverHost -replace "[^A-Za-z0-9-]", "-"
+$taskName = "bb-host-daemon-$slug"
 $dataRoot = if ($env:BB_DATA_DIR) { $env:BB_DATA_DIR } else { Join-Path $env:LOCALAPPDATA "bb\machines\$serverHost" }
 $dataRoot = [IO.Path]::GetFullPath($dataRoot)
 $logRoot = Join-Path $dataRoot "logs"
@@ -133,8 +135,24 @@ $alreadyJoined = $false
 if (Test-Path $authPath) {
   try {
     $auth = Get-Content $authPath -Raw | ConvertFrom-Json
-    if ($auth.hostId -ne $HostId) { Fail "$dataRoot already holds credentials for a different host." }
-    $alreadyJoined = $true
+    if ($auth.hostId -eq $HostId) {
+      $alreadyJoined = $true
+    } else {
+      Write-Host "Replacing the previous enrollment for $Server..."
+      Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+      Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+      Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.ProcessId -ne $PID -and
+          ([string]$_.CommandLine).Contains("host-daemon") -and
+          ([string]$_.CommandLine).Contains($Server)
+        } |
+        ForEach-Object {
+          Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+      Start-Sleep -Milliseconds 250
+      Remove-Item -Force $authPath
+    }
   } catch { Fail "Could not read the existing bb enrollment in $dataRoot." }
 }
 
@@ -163,8 +181,6 @@ if (-not $alreadyJoined) {
 if ($joinProcess -and -not $joinProcess.HasExited) { $joinProcess.Kill() }
 if ($null -eq $oldDataDir) { Remove-Item Env:BB_DATA_DIR -ErrorAction SilentlyContinue } else { $env:BB_DATA_DIR = $oldDataDir }
 
-$slug = $serverHost -replace "[^A-Za-z0-9-]", "-"
-$taskName = "bb-host-daemon-$slug"
 $runnerPath = Join-Path $dataRoot "run-host-daemon.ps1"
 $runner = @"
 `$env:BB_DATA_DIR = $(Quote-PowerShell $dataRoot)
@@ -179,4 +195,4 @@ Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $taskTri
 Start-ScheduledTask -TaskName $taskName
 Write-Host "Installed per-user scheduled task: $taskName"
 Write-Host "Host daemon local API: http://127.0.0.1:$port"
-Write-Host "Uninstall: Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false; Remove-Item -Recurse -Force $(Quote-PowerShell $dataRoot)"
+Write-Host "Uninstall: Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force $(Quote-PowerShell $dataRoot)"

@@ -40,6 +40,12 @@ unless you pass `--auto-update` explicitly.
   bb machine provider-cli install <machine> <claudeCode|codex|cursor>
     --action <install|update>
 
+Removing a machine revokes its server access but does not delete its local
+agent or project checkouts. To pair the same computer again, add a machine and
+run the fresh installer. The Windows installer stops and replaces an older
+enrollment for the same server automatically; manual Scheduled Task or data-dir
+cleanup is not required.
+
 Each machine has a permission limit: the highest permission mode any thread on
 that machine can run with. The default is Full Access. A thread that asks for
 more resolves down to the limit, and a provider that supports no mode under the

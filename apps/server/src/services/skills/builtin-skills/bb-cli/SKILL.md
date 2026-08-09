@@ -203,7 +203,11 @@ isolated|reuse`, or anchor with `--source-seq-end`. Permission mode inherits
   minutes, then let launchd/systemd restart the daemon. Auto-update never
   downgrades. Use `bb machine retry-update <id-or-name>` to bypass the current
   backoff after a transient failure. Remove `--auto-update` from the service
-  definition and reload it to opt out.
+  definition and reload it to opt out. Removing a machine revokes server access
+  without deleting local project checkouts or the agent installation. Pair it
+  again with a fresh Settings installer; on Windows that installer stops and
+  replaces the previous enrollment automatically, without manual Scheduled
+  Task or data-directory cleanup.
 - Run `bb machine list` to see machine names, IDs, connection status, and last
   seen time (`--json` returns the raw host list). Use `--machine <id-or-name>`
   (alias `--host`) on `bb thread spawn` to run in a personal or unmanaged

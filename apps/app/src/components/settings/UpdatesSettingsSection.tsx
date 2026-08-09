@@ -855,7 +855,7 @@ export function UpdatesSettingsSection() {
                   retryHostUpdate.mutate(hostId, {
                     onSuccess: () => {
                       appToast.success(
-                        `Update retry requested for ${machine.host.name}`,
+                        `Update retry queued for ${machine.host.name}. It will install when the agent reconnects.`,
                       );
                     },
                   })

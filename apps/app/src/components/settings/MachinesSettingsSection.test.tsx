@@ -266,8 +266,11 @@ describe("MachinesSettingsSection", () => {
       await screen.findByRole("menuitem", { name: /Remove machine/ }),
     );
 
+    expect(
+      await screen.findByText(/does not uninstall its local bb agent/u),
+    ).toBeDefined();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Remove machine" }),
+      await screen.findByRole("button", { name: "Remove server access" }),
     );
 
     await waitFor(() => {
