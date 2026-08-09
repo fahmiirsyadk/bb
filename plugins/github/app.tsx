@@ -2149,57 +2149,114 @@ function NewIssueForm({
 // The panel: tab bar + filters + routed body.
 // ---------------------------------------------------------------------------
 
+type GithubHostState =
+  | "ready"
+  | "offline"
+  | "gh-not-installed"
+  | "gh-not-authenticated"
+  | "check-failed";
+
+interface GithubHostStatus {
+  hostId: string;
+  repositories: string[];
+  state: GithubHostState;
+  detail: string | null;
+  login: string | null;
+}
+
+type GithubDiscovery =
+  | { state: "ready" }
+  | { state: "no-repositories"; detail: string }
+  | { state: "failed"; detail: string };
+
 interface Status {
-  ghOk: boolean;
-  ghError: string | null;
-  hosts: Array<{ hostId: string; ok: boolean; error: string | null }>;
-  repos: RepoInfo[];
+  discovery: GithubDiscovery;
+  hosts: GithubHostStatus[];
+  repositories: Array<RepoInfo & { hostId: string }>;
   lastSyncedAt: string | null;
 }
 
-function useStatus(): { status: Status | null; refetch: () => void } {
+interface StatusState {
+  status: Status | null;
+  error: string | null;
+}
+
+function useStatus(): StatusState & { refetch: () => void } {
   const rpc = useRpc<typeof githubRpcContract>();
   const [status, setStatus] = useState<Status | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const refetch = useCallback(() => {
-    rpc.call("status").then(
-      (result) => setStatus(result as Status),
-      () => {},
+    setError(null);
+    rpc.call("status", null).then(
+      (result) => {
+        setStatus(result);
+        setError(null);
+      },
+      (reason: unknown) => {
+        setStatus(null);
+        setError(errorText(reason));
+      },
     );
   }, [rpc]);
   useEffect(() => {
     refetch();
   }, [refetch]);
   useRealtime("data-changed", refetch);
-  return { status, refetch };
+  return { status, error, refetch };
 }
 
 function PanelHeader() {
   const rpc = useRpc<typeof githubRpcContract>();
-  const { status } = useStatus();
+  const { status, error: statusError, refetch } = useStatus();
   const [syncing, setSyncing] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const refresh = useCallback(() => {
     setSyncing(true);
-    setFailed(false);
+    setRefreshError(null);
     rpc
-      .call("refresh")
-      .catch(() => setFailed(true))
+      .call("refresh", null)
+      .then(() => refetch())
+      .catch((reason: unknown) => {
+        setRefreshError(errorText(reason));
+        // A refresh can partially succeed before returning an error. Always
+        // reload the status snapshot so healthy machines remain visible.
+        refetch();
+      })
       .finally(() => setSyncing(false));
-  }, [rpc]);
+  }, [rpc, refetch]);
+
+  const readyHosts = status?.hosts.filter((host) => host.state === "ready").length ?? 0;
+  const hostCount = status?.hosts.length ?? 0;
+  const hasHostFailures =
+    status?.hosts.some((host) => host.state !== "ready") ?? false;
+  let summary = "Loading GitHub machine status…";
+  if (statusError !== null) {
+    summary =
+      "Unable to load GitHub machine status" +
+      (statusError.length > 0 ? ": " + statusError : "");
+  } else if (refreshError !== null) {
+    summary =
+      "Refresh failed" + (refreshError.length > 0 ? ": " + refreshError : "");
+  } else if (status !== null) {
+    if (status.discovery.state === "failed") {
+      summary =
+        status.repositories.length > 0
+          ? "Repository discovery partially unavailable"
+          : "Repository discovery failed";
+    } else {
+      summary =
+        `${status.repositories.length} repo${status.repositories.length === 1 ? "" : "s"} · ${readyHosts}/${hostCount} repository machine${hostCount === 1 ? "" : "s"} ready${hasHostFailures ? " · some machines need attention" : ""} · synced ${status.lastSyncedAt !== null ? relativeTime(status.lastSyncedAt) : "never"}`;
+    }
+  }
+
+  const hasError = statusError !== null || refreshError !== null;
   return (
     <>
-      <span className="text-xs text-muted-foreground">
-        {failed
-          ? "Sync failed — check `gh auth status`"
-          : status === null
-            ? "Loading…"
-            : status.ghOk
-              ? `${status.repos.length} repo${status.repos.length === 1 ? "" : "s"} · ${
-                  status.hosts.length
-                } machine${status.hosts.length === 1 ? "" : "s"} · synced ${
-                  status.lastSyncedAt !== null ? relativeTime(status.lastSyncedAt) : "never"
-                }`
-              : "GitHub CLI not authenticated"}
+      <span
+        className={hasError ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+        role={hasError ? "alert" : "status"}
+      >
+        {summary}
       </span>
       <Button size="sm" variant="outline" disabled={syncing} onClick={refresh}>
         {syncing ? "Syncing…" : "Refresh"}
@@ -2213,7 +2270,7 @@ const DEFAULT_QUERY = "is:open ";
 
 function GithubPanel({ subPath }: PluginNavPanelProps) {
   const [route, navigate] = useSubPathRoute(subPath);
-  const { status } = useStatus();
+  const { status, error: statusError } = useStatus();
   const [query, setQueryState] = useState<string>(() => {
     try {
       return window.localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY;
@@ -2237,6 +2294,7 @@ function GithubPanel({ subPath }: PluginNavPanelProps) {
           route={route}
           navigate={navigate}
           status={status}
+          statusError={statusError}
           query={query}
           setQuery={setQuery}
         />
@@ -2279,65 +2337,204 @@ function ListView({
   );
 }
 
+const HOST_STATE_LABELS: Record<GithubHostState, string> = {
+  ready: "Ready",
+  offline: "Offline",
+  "gh-not-installed": "GitHub CLI not installed",
+  "gh-not-authenticated": "GitHub CLI not authenticated",
+  "check-failed": "Status check failed",
+};
+
+function hostRecoveryHint(state: GithubHostState): string | null {
+  switch (state) {
+    case "offline":
+      return "Bring this BB machine online, then select Refresh.";
+    case "gh-not-installed":
+      return "Install GitHub CLI on this machine, then select Refresh.";
+    case "gh-not-authenticated":
+      return "Run gh auth login on this machine, then select Refresh.";
+    case "check-failed":
+      return "Check this machine and select Refresh to retry.";
+    case "ready":
+      return null;
+  }
+}
+
+function GithubMachineStatus({ status }: { status: Status }) {
+  if (status.hosts.length === 0) return null;
+  const readyCount = status.hosts.filter((host) => host.state === "ready").length;
+  const hasFailures = readyCount !== status.hosts.length;
+  return (
+    <section
+      aria-label="GitHub repository machines"
+      className="mb-4 flex flex-col gap-2 rounded-md border border-border p-3"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-medium text-foreground">Repository machines</h2>
+        <span className="text-xs text-muted-foreground">
+          {readyCount}/{status.hosts.length} ready
+        </span>
+      </div>
+      {hasFailures ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          Some machines need attention. Repositories on ready machines remain available.
+        </p>
+      ) : null}
+      <div className="flex flex-col gap-2">
+        {status.hosts.map((host) => {
+          const hint = hostRecoveryHint(host.state);
+          return (
+            <div
+              key={host.hostId}
+              data-host-id={host.hostId}
+              className="rounded border border-border/70 px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <span className="font-mono text-xs text-foreground">{host.hostId}</span>
+                <Badge variant="outline" className="font-normal">
+                  {HOST_STATE_LABELS[host.state]}
+                </Badge>
+              </div>
+              {host.repositories.length > 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Repositories: {host.repositories.join(", ")}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  No repositories are currently routed to this machine.
+                </p>
+              )}
+              {host.detail !== null && host.detail.length > 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">{host.detail}</p>
+              ) : null}
+              {host.login !== null ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  GitHub account: {host.login}
+                </p>
+              ) : null}
+              {hint !== null ? (
+                <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function GithubPanelBody({
   route,
   navigate,
   status,
+  statusError,
   query,
   setQuery,
 }: {
   route: Route;
   navigate: (route: Route) => void;
   status: Status | null;
+  statusError: string | null;
   query: string;
   setQuery: (query: string) => void;
 }) {
-  if (status !== null && !status.ghOk) {
+  if (status === null) {
     return (
       <EmptyState
-        message={`GitHub CLI is not available or authenticated on one or more repository machines. Install it and run \`gh auth login\` on those machines, then reload the plugin. (${status.ghError ?? ""})`}
+        message={
+          statusError === null
+            ? "Loading GitHub machine status…"
+            : "Unable to load GitHub machine status. " +
+              statusError +
+              " Use Refresh to try again."
+        }
       />
-    );
-  }
-  if (status !== null && status.repos.length === 0) {
-    return (
-      <EmptyState message="No GitHub repos tracked yet. Create a BB project whose checkout has a GitHub origin remote, or add repos via the extraRepos plugin setting." />
     );
   }
 
+  if (status.discovery.state === "failed" && status.repositories.length === 0) {
+    return (
+      <>
+        <GithubMachineStatus status={status} />
+        <EmptyState
+          message={
+            "Repository discovery failed. " +
+            status.discovery.detail +
+            " Use Refresh to try again."
+          }
+        />
+      </>
+    );
+  }
+
+  if (
+    status.discovery.state === "no-repositories" ||
+    status.repositories.length === 0
+  ) {
+    return (
+      <>
+        <GithubMachineStatus status={status} />
+        <EmptyState message="No GitHub repository machines are configured. Add a machine-backed source to a BB project. Extra repositories also require a Default BB project so BB knows which machine should run GitHub CLI." />
+      </>
+    );
+  }
+
+  const machineStatus = <GithubMachineStatus status={status} />;
+  const discoveryWarning =
+    status.discovery.state === "failed" ? (
+      <p className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground" role="alert">
+        Repository discovery is partially unavailable: {status.discovery.detail}
+        {" "}Repositories found on ready machines remain available. Use Refresh to retry.
+      </p>
+    ) : null;
+
   if (route.view === "issue") {
     return (
-      <IssueDetailView
-        repo={route.repo}
-        number={route.number}
-        onBack={() => navigate({ view: "issues" })}
-      />
+      <>
+        {machineStatus}
+        {discoveryWarning}
+        <IssueDetailView
+          repo={route.repo}
+          number={route.number}
+          onBack={() => navigate({ view: "issues" })}
+        />
+      </>
     );
   }
   if (route.view === "pull") {
     return (
-      <PullDetailView
-        repo={route.repo}
-        number={route.number}
-        onBack={() => navigate({ view: "pulls" })}
-      />
+      <>
+        {machineStatus}
+        {discoveryWarning}
+        <PullDetailView
+          repo={route.repo}
+          number={route.number}
+          onBack={() => navigate({ view: "pulls" })}
+        />
+      </>
     );
   }
   if (route.view === "new") {
     return (
-      <NewIssueForm
-        repos={status?.repos ?? []}
-        onCreated={(repo, number) =>
-          navigate(number !== null ? { view: "issue", repo, number } : { view: "issues" })
-        }
-        onCancel={() => navigate({ view: "issues" })}
-      />
+      <>
+        {machineStatus}
+        {discoveryWarning}
+        <NewIssueForm
+          repos={status.repositories}
+          onCreated={(repo, number) =>
+            navigate(number !== null ? { view: "issue", repo, number } : { view: "issues" })
+          }
+          onCancel={() => navigate({ view: "issues" })}
+        />
+      </>
     );
   }
 
   const kind = route.view === "pulls" ? "pr" : "issue";
   return (
     <div className="flex flex-col gap-3">
+      {machineStatus}
+      {discoveryWarning}
       <div className="flex items-center gap-2">
         <Tabs
           value={route.view}
@@ -2362,7 +2559,7 @@ function GithubPanelBody({
         kind={kind}
         query={query}
         setQuery={setQuery}
-        repos={status?.repos ?? []}
+        repos={status.repositories}
         onOpenItem={(repo, number) =>
           navigate(kind === "pr" ? { view: "pull", repo, number } : { view: "issue", repo, number })
         }

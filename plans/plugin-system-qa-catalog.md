@@ -945,3 +945,69 @@ collector validation, and authoring docs pins.
 - [ ] **Docs composer scope**: open a Docs directive in a thread side panel →
       Add to chat and Mention in chat target that thread; confirm those actions
       are absent from the full Docs nav editor and generic file-opener tabs.
+
+## GitHub interim machine-status patch
+
+This is the three-machine acceptance pass for the interim GitHub correction.
+It verifies repository-owner routing and per-host `gh` identities; it does
+not verify the future machine-scoped worker/runtime. Use three connected BB
+hosts and three machine-backed project sources, for example:
+
+```text
+VM-ubuntu  → owner/repo-a → local gh login alice
+void-PC    → owner/repo-b → local gh login bob
+build-01   → owner/repo-c → local gh login ci-bot
+```
+
+Authenticate on each host with `gh auth login` and run `gh auth status` there
+to verify the intended account. Never paste tokens into BB settings or this
+catalog. Keep a terminal/log view on each host if possible so command routing
+can be verified without exposing credentials.
+
+- [ ] **Repository-machine count is clear**: GitHub status identifies the
+      repository-owning machines and the repositories routed to each; it does
+      not call three enrolled machines “0 machines” when no repository source
+      was discovered. A host with no GitHub source is not implied to have the
+      plugin installed or configured.
+- [ ] **Three-host routing**: open/list or mutate an item in `repo-a`, `repo-b`,
+      and `repo-c`; each `gh` invocation reaches the corresponding host and
+      therefore uses alice, bob, and ci-bot respectively. No token or account
+      switch occurs in the server process.
+- [ ] **One host fails independently**: log out of `gh` on `void-PC` (or stop
+      that daemon), press Refresh, and confirm the void-PC row explains its
+      failure while repo-a/repo-c results remain visible. GitHub stays usable;
+      the plugin does not become globally `needs-configuration`.
+- [ ] **Authentication recovery**: run `gh auth login` on void-PC, press
+      Refresh, and confirm its row becomes ready without `bb plugin reload
+      github`. The refresh result reports partial success rather than hiding
+      the healthy hosts.
+- [ ] **Host replacement/topology refresh**: remove or replace one project
+      source/host, force Refresh, and confirm the old host ID and its stale
+      status disappear. Items and viewer/identity metadata from the old host
+      must not be shown as belonging to the replacement host.
+- [ ] **Changing a host's GitHub identity**: on a host with multiple local
+      accounts, switch the account with that host's GitHub CLI, then Refresh.
+      Operations for every repository still mapped to that host use the newly
+      selected local account; BB does not offer server-side credential
+      switching. If two repos require different identities, assign them to
+      different hosts until machine-scoped bindings exist.
+- [ ] **`extraRepos` fallback is explicit**: add two unattached repositories in
+      `extraRepos` and select `defaultProject`. Both route to that project's
+      source host and identity. Change `defaultProject`, save, and Refresh;
+      both mappings move to the new host. Confirm there is no per-extra-repo
+      host selector yet.
+- [ ] **Duplicate repository conflict**: expose the same `owner/repo` through
+      project sources on two hosts with different GitHub identities. The patch
+      must show an explicit routing conflict and refuse arbitrary first-host
+      selection. If it silently keeps one source, record a release-blocking
+      routing/data-isolation bug.
+- [ ] **Aggregate-panel wording**: the global GitHub panel may aggregate
+      repository results during this interim phase, but rows/status must not
+      imply one account for all hosts. Switching the composer machine is not
+      expected to filter every GitHub surface until the machine-scoped runtime
+      lands; confirm this limitation is visible in the README/plan.
+- [ ] **Server cache boundary**: inspect the plugin database after sync and
+      confirm issue/PR rows are not persisted there. Restarting the app clears
+      the in-memory cache until the next sync. Also verify server logs and RPC
+      responses contain no GitHub tokens; “not persisted” does not mean
+      “never present in the server process.”

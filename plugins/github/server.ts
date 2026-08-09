@@ -16,10 +16,6 @@ const CLOSED_ISSUE_PAGE = 50;
 const PR_PAGE = 50;
 const CLOSED_PR_PAGE = 30;
 
-const GH_HINT =
-  "Install the GitHub CLI (https://cli.github.com) and run `gh auth login` " +
-  "on the repository's BB machine, then `bb plugin reload github`.";
-
 const repoNameSchema = z.string().regex(/^[\w.-]+\/[\w.-]+$/);
 const itemNumberSchema = z.number().int().positive();
 const itemInputSchema = z
@@ -29,8 +25,40 @@ const nonBlankStringSchema = z
   .string()
   .refine((value) => value.trim().length > 0, "must not be blank");
 const repoInfoSchema = z
-  .object({ repo: repoNameSchema, projectId: z.string().nullable() })
+  .object({
+    repo: repoNameSchema,
+    projectId: z.string().nullable(),
+    hostId: z.string().min(1),
+  })
   .strict();
+const githubHostStateSchema = z.enum([
+  "ready",
+  "offline",
+  "gh-not-installed",
+  "gh-not-authenticated",
+  "check-failed",
+]);
+const githubHostStatusSchema = z
+  .object({
+    hostId: z.string().min(1),
+    repositories: z.array(repoNameSchema),
+    state: githubHostStateSchema,
+    detail: z.string().nullable(),
+    login: z.string().min(1).nullable(),
+  })
+  .strict();
+const githubDiscoverySchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("ready") }).strict(),
+  z
+    .object({
+      state: z.literal("no-repositories"),
+      detail: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({ state: z.literal("failed"), detail: z.string().min(1) })
+    .strict(),
+]);
 const itemSchema = z
   .object({
     repo: repoNameSchema,
@@ -50,6 +78,14 @@ const syncResultSchema = z
   .object({
     repos: z.number().int().nonnegative(),
     items: z.number().int().nonnegative(),
+    failedHosts: z.array(
+      z
+        .object({
+          hostId: z.string().min(1),
+          detail: z.string().min(1),
+        })
+        .strict(),
+    ),
   })
   .strict();
 const okResultSchema = z.object({ ok: z.literal(true) }).strict();
@@ -135,18 +171,9 @@ export const githubRpcContract = defineRpcContract({
     input: z.null(),
     output: z
       .object({
-        ghOk: z.boolean(),
-        ghError: z.string().nullable(),
-        hosts: z.array(
-          z
-            .object({
-              hostId: z.string(),
-              ok: z.boolean(),
-              error: z.string().nullable(),
-            })
-            .strict(),
-        ),
-        repos: z.array(repoInfoSchema),
+        discovery: githubDiscoverySchema,
+        hosts: z.array(githubHostStatusSchema),
+        repositories: z.array(repoInfoSchema),
         lastSyncedAt: z.string().nullable(),
       })
       .strict(),
@@ -268,6 +295,46 @@ interface RepoInfo {
   hostId: string;
 }
 
+type RepoDiscovery =
+  | {
+      state: "ready";
+      repos: RepoInfo[];
+      conflicts: string[];
+      hostFailures: Array<{ hostId: string; detail: string }>;
+      detail: null;
+    }
+  | {
+      state: "no-repositories";
+      repos: [];
+      conflicts: string[];
+      hostFailures: Array<{ hostId: string; detail: string }>;
+      detail: string;
+    }
+  | {
+      state: "failed";
+      repos: RepoInfo[];
+      conflicts: string[];
+      hostFailures: Array<{ hostId: string; detail: string }>;
+      detail: string;
+    };
+
+type GithubHostState = z.infer<typeof githubHostStateSchema>;
+
+interface GithubHostStatus {
+  hostId: string;
+  repositories: string[];
+  state: GithubHostState;
+  detail: string | null;
+  login: string | null;
+}
+
+interface GithubStatusSnapshot {
+  discovery: RepoDiscovery;
+  hosts: GithubHostStatus[];
+  discoveryKey: string;
+  checkedAt: number;
+}
+
 interface CachedItem {
   repo: string;
   number: number;
@@ -288,12 +355,6 @@ interface ThreadLink {
   number: number;
   threadId: string;
   createdAt: string;
-}
-
-function needsConfiguration(message: string): Error {
-  return Object.assign(new Error(message), {
-    name: "NeedsConfigurationError",
-  });
 }
 
 /** owner/name from any GitHub remote URL (https, ssh, git@), else null. */
@@ -325,7 +386,7 @@ async function runOnHost(
   if (result.exitCode !== 0) {
     throw new Error(
       `${executable} ${args.slice(0, 3).join(" ")} failed on ${hostId}: ${
-        result.stderr.trim() || `exit ${result.exitCode}`
+        result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`
       }`,
     );
   }
@@ -372,6 +433,101 @@ export function validateGithubCliArgs(argv: string[]): string | null {
   return null;
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Keep command diagnostics useful without allowing credential-shaped values
+ * from a host command to cross the plugin RPC boundary. */
+function sanitizeDetail(message: string): string {
+  const sanitized = message
+    .replace(/\bgh[pousr]_[A-Za-z0-9_-]+\b/g, "[redacted-token]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [redacted-token]")
+    .replace(/\b(token|oauth|password|secret)\s*[:=]\s*\S+/gi, "$1=[redacted]")
+    .replace(/\s+/g, " ")
+    .trim();
+  return sanitized.length > 500 ? `${sanitized.slice(0, 497)}…` : sanitized;
+}
+
+function classifyAuthFailure(error: unknown): {
+  state: Exclude<GithubHostState, "ready">;
+  detail: string;
+} {
+  const raw = errorText(error);
+  const message = raw.toLowerCase();
+  if (
+    /not logged in|not authenticated|authentication required|no active account|\bgh auth login\b|not logged into any github/.test(
+      message,
+    )
+  ) {
+    return {
+      state: "gh-not-authenticated",
+      detail: "GitHub CLI is not authenticated on this machine. Run `gh auth login` there.",
+    };
+  }
+  if (
+    /command not found|enoent|no such file or directory|not recognized as an internal or external command|executable .* not found|cannot find .*\bgh\b/.test(
+      message,
+    )
+  ) {
+    return {
+      state: "gh-not-installed",
+      detail: "GitHub CLI is not installed on this machine. Install it, then run `gh auth login` there.",
+    };
+  }
+  if (
+    /host .*\b(?:offline|unavailable|not connected|disconnected|unknown)\b|(?:connection|transport|socket) .*\b(?:closed|refused|failed)\b|daemon .*\b(?:offline|unavailable|not connected)\b/.test(
+      message,
+    )
+  ) {
+    return {
+      state: "offline",
+      detail: "This BB machine is offline or unavailable.",
+    };
+  }
+  return {
+    state: "check-failed",
+    detail: sanitizeDetail(raw) || "GitHub CLI authentication check failed.",
+  };
+}
+
+function classifyDiscoveryFailure(detail: string): {
+  state: Exclude<GithubHostState, "ready">;
+  detail: string;
+} {
+  const message = detail.toLowerCase();
+  if (
+    /host .*\b(?:offline|unavailable|not connected|disconnected|unknown)\b|(?:connection|transport|socket) .*\b(?:closed|refused|failed)\b|daemon .*\b(?:offline|unavailable|not connected)\b/.test(
+      message,
+    )
+  ) {
+    return {
+      state: "offline",
+      detail: "This BB machine is offline or unavailable.",
+    };
+  }
+  return {
+    state: "check-failed",
+    detail: detail || "GitHub repository discovery failed on this machine.",
+  };
+}
+
+/** A local checkout without a GitHub origin is not a discovery failure. */
+function isMissingGitRemote(error: unknown): boolean {
+  const message = errorText(error).toLowerCase();
+  return (
+    /not a git repository/.test(message) ||
+    /no such remote ['"]?origin/.test(message) ||
+    /does not appear to be a git repository/.test(message)
+  );
+}
+
+function parseGhLogin(stdout: string, stderr: string): string | null {
+  const output = `${stdout}\n${stderr}`;
+  const match = output.match(/\baccount\s+([A-Za-z0-9][A-Za-z0-9-]*)\b/i);
+  return match?.[1] ?? null;
+}
+
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
     extraRepos: {
@@ -393,12 +549,6 @@ export default async function plugin(bb: BbPluginApi) {
   // gh CLI plumbing. Commands execute on each repository's owning BB host;
   // credentials never come from the central server process.
   // ------------------------------------------------------------------
-  let ghAuthError: string | null = "checking gh…";
-  const ghAuthByHost = new Map<
-    string,
-    { ok: boolean; error: string | null }
-  >();
-
   async function ghOnHost(
     hostId: string,
     args: string[],
@@ -413,51 +563,38 @@ export default async function plugin(bb: BbPluginApi) {
     args: string[],
     timeoutMs?: number,
   ): Promise<string> {
-    const info = (await discoverRepos()).find((entry) => entry.repo === repo);
+    const info = (await discoverRepos()).repos.find((entry) => entry.repo === repo);
     if (info === undefined) {
       throw new Error(`No BB machine is configured for GitHub repository ${repo}`);
     }
     return ghOnHost(info.hostId, args, timeoutMs);
   }
 
-  async function checkAuth(): Promise<void> {
-    const repos = await discoverRepos();
-    const hostIds = [...new Set(repos.map((repo) => repo.hostId))];
-    const failures: string[] = [];
-    await Promise.all(
-      hostIds.map(async (hostId) => {
-        try {
-          await ghOnHost(hostId, ["auth", "status"], 10_000);
-          ghAuthByHost.set(hostId, { ok: true, error: null });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          ghAuthByHost.set(hostId, { ok: false, error: message });
-          failures.push(`${hostId}: ${message}`);
-        }
-      }),
-    );
-    if (failures.length === 0) {
-      ghAuthError = null;
-      return;
-    }
-    ghAuthError = failures.join("; ");
-    throw needsConfiguration(
-      `GitHub CLI is not authenticated on ${failures.length} BB machine${
-        failures.length === 1 ? "" : "s"
-      }. ${GH_HINT}`,
-    );
-  }
-
   // ------------------------------------------------------------------
   // Repo discovery: BB project sources → git origin → owner/repo.
   // ------------------------------------------------------------------
-  let repoCache: { repos: RepoInfo[]; fetchedAt: number } | null = null;
+  let repoCache: { result: RepoDiscovery; fetchedAt: number } | null = null;
 
-  async function discoverRepos(force = false): Promise<RepoInfo[]> {
+  async function discoverRepos(force = false): Promise<RepoDiscovery> {
     if (!force && repoCache !== null && Date.now() - repoCache.fetchedAt < 60_000) {
-      return repoCache.repos;
+      return repoCache.result;
     }
     const byRepo = new Map<string, RepoInfo>();
+    const conflicts = new Map<string, Set<string>>();
+    const hostFailures = new Map<string, string>();
+    const failures: string[] = [];
+
+    function addRepo(info: RepoInfo): void {
+      if (conflicts.has(info.repo)) return;
+      const existing = byRepo.get(info.repo);
+      if (existing === undefined || existing.hostId === info.hostId) {
+        if (existing === undefined) byRepo.set(info.repo, info);
+        return;
+      }
+      byRepo.delete(info.repo);
+      conflicts.set(info.repo, new Set([existing.hostId, info.hostId]));
+    }
+
     try {
       const projects = await bb.sdk.projects.list();
       const { defaultProject, extraRepos } = await settings.get();
@@ -479,26 +616,34 @@ export default async function plugin(bb: BbPluginApi) {
               5_000,
             );
             const repo = parseGithubRemote(stdout);
-            if (repo !== null && !byRepo.has(repo)) {
-              byRepo.set(repo, {
+            if (repo !== null) {
+              addRepo({
                 repo,
                 projectId: project.id,
                 hostId: source.hostId,
               });
             }
-          } catch {
-            // no remote / not a git checkout — skip this source
+          } catch (error) {
+            // A project may intentionally contain a non-GitHub checkout or a
+            // local directory that has no origin. Neither should make GitHub
+            // discovery look broken for every other project.
+            if (!isMissingGitRemote(error)) {
+              const detail = sanitizeDetail(errorText(error));
+              hostFailures.set(source.hostId, detail);
+              failures.push(`${source.hostId}: ${detail}`);
+            }
           }
         }
       }
       for (const raw of extraRepos.split(/[\s,]+/)) {
-        if (isRepoName(raw) && !byRepo.has(raw)) {
+        if (isRepoName(raw) && !byRepo.has(raw) && !conflicts.has(raw)) {
           if (fallbackSource === undefined) {
-            throw needsConfiguration(
+            failures.push(
               `No BB machine is available for ${raw}. Select a default BB project with a machine-backed source.`,
             );
+            continue;
           }
-          byRepo.set(raw, {
+          addRepo({
             repo: raw,
             projectId: null,
             hostId: fallbackSource.hostId,
@@ -506,24 +651,194 @@ export default async function plugin(bb: BbPluginApi) {
         }
       }
     } catch (error) {
-      if (error instanceof Error && error.name === "NeedsConfigurationError") {
-        throw error;
-      }
-      bb.log.warn(
-        `project discovery failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      failures.push(`Project discovery failed: ${sanitizeDetail(errorText(error))}`);
     }
     const repos = [...byRepo.values()];
-    repoCache = { repos, fetchedAt: Date.now() };
-    return repos;
+    for (const { hostId } of repos) hostFailures.delete(hostId);
+    for (const [repo, hosts] of conflicts) {
+      failures.push(`Repository ${repo} is configured on multiple BB machines: ${[...hosts].join(", ")}. Choose one machine.`);
+    }
+    const result: RepoDiscovery =
+      failures.length > 0
+        ? {
+            state: "failed",
+            repos,
+            conflicts: [...conflicts.keys()].sort(),
+            hostFailures: [...hostFailures.entries()]
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([hostId, detail]) => ({ hostId, detail })),
+            detail: failures
+              .map((failure) => sanitizeDetail(failure))
+              .filter((failure) => failure.length > 0)
+              .join("; ") || "GitHub repository discovery failed.",
+          }
+        : repos.length === 0
+          ? {
+              state: "no-repositories",
+              repos: [],
+              conflicts: [],
+              hostFailures: [],
+              detail:
+                "No GitHub repository machines are configured. Add a machine-backed source to a BB project. Extra repositories also require a Default BB project so BB knows which machine should run GitHub CLI.",
+            }
+          : { state: "ready", repos, conflicts: [], hostFailures: [], detail: null };
+    repoCache = { result, fetchedAt: Date.now() };
+    return result;
+  }
+
+  let statusSnapshot: GithubStatusSnapshot | null = null;
+  let cachedItems: CachedItem[] = [];
+  const viewerCache = new Map<string, { login: string; fetchedAt: number }>();
+  const assignableCache = new Map<string, { users: string[]; fetchedAt: number }>();
+  const labelsCache = new Map<string, { labels: string[]; fetchedAt: number }>();
+
+  function clearCachedRepos(repos: ReadonlySet<string>): void {
+    if (repos.size === 0) return;
+    cachedItems = cachedItems.filter((item) => !repos.has(item.repo));
+    for (const repo of repos) {
+      viewerCache.delete(repo);
+      assignableCache.delete(repo);
+      labelsCache.delete(repo);
+    }
+  }
+
+  function discoveryKey(discovery: RepoDiscovery): string {
+    return JSON.stringify({
+      state: discovery.state,
+      repos: discovery.repos.map(({ repo, projectId, hostId }) => [repo, projectId, hostId]),
+      hostFailures: discovery.hostFailures,
+      detail: discovery.detail,
+    });
+  }
+
+  function statusForRpc(snapshot: GithubStatusSnapshot) {
+    return {
+      discovery:
+        snapshot.discovery.state === "ready"
+          ? { state: "ready" as const }
+          : {
+              state: snapshot.discovery.state,
+              detail: snapshot.discovery.detail,
+            },
+      hosts: snapshot.hosts,
+      repositories: snapshot.discovery.repos.map(({ repo, projectId, hostId }) => ({
+        repo,
+        projectId,
+        hostId,
+      })),
+      lastSyncedAt,
+    };
+  }
+
+  async function checkAuth(force = false): Promise<GithubStatusSnapshot> {
+    const discovery = await discoverRepos(force);
+    const key = discoveryKey(discovery);
+    if (
+      !force &&
+      statusSnapshot !== null &&
+      statusSnapshot.discoveryKey === key &&
+      Date.now() - statusSnapshot.checkedAt < 60_000
+    ) {
+      return statusSnapshot;
+    }
+    const previousSnapshot = statusSnapshot;
+    const hostIds = [
+      ...new Set([
+        ...discovery.repos.map((repo) => repo.hostId),
+        ...discovery.hostFailures.map(({ hostId }) => hostId),
+      ]),
+    ];
+    const discoveryFailures = new Map(
+      discovery.hostFailures.map(({ hostId, detail }) => [hostId, detail]),
+    );
+    const hosts = await Promise.all(
+      hostIds.map(async (hostId): Promise<GithubHostStatus> => {
+        const repositories = discovery.repos
+          .filter((repo) => repo.hostId === hostId)
+          .map((repo) => repo.repo)
+          .sort();
+        const discoveryFailure = discoveryFailures.get(hostId);
+        if (discoveryFailure !== undefined) {
+          const failure = classifyDiscoveryFailure(discoveryFailure);
+          return {
+            hostId,
+            repositories,
+            state: failure.state,
+            detail: failure.detail,
+            login: null,
+          };
+        }
+        try {
+          const result = await runOnHost(
+            bb,
+            hostId,
+            "gh",
+            ["auth", "status"],
+            10_000,
+          );
+          return {
+            hostId,
+            repositories,
+            state: "ready",
+            detail: null,
+            login: parseGhLogin(result.stdout, result.stderr),
+          };
+        } catch (error) {
+          const failure = classifyAuthFailure(error);
+          return {
+            hostId,
+            repositories,
+            state: failure.state,
+            detail: failure.detail,
+            login: null,
+          };
+        }
+      }),
+    );
+    const nextSnapshot: GithubStatusSnapshot = {
+      discovery,
+      hosts,
+      discoveryKey: key,
+      checkedAt: Date.now(),
+    };
+    const staleRepos = new Set<string>();
+    if (previousSnapshot !== null) {
+      const previousRepoHosts = new Map(
+        previousSnapshot.discovery.repos.map(({ repo, hostId }) => [repo, hostId]),
+      );
+      for (const { repo, hostId } of discovery.repos) {
+        if (previousRepoHosts.get(repo) !== undefined && previousRepoHosts.get(repo) !== hostId) {
+          staleRepos.add(repo);
+        }
+      }
+      const previousHosts = new Map(
+        previousSnapshot.hosts.map((host) => [host.hostId, host]),
+      );
+      for (const host of hosts) {
+        const previousHost = previousHosts.get(host.hostId);
+        if (
+          previousHost !== undefined &&
+          (previousHost.state !== host.state || previousHost.login !== host.login)
+        ) {
+          for (const repo of previousHost.repositories) staleRepos.add(repo);
+        }
+      }
+    }
+    // A repository can keep the same name while its checkout moves to another
+    // host or while that host switches its local gh account. Never show rows
+    // or viewer metadata fetched under the old identity after that change.
+    clearCachedRepos(staleRepos);
+    // Replace the complete snapshot only after every host check has settled.
+    // This drops removed hosts and prevents a partial check from retaining
+    // auth state belonging to the previous repository topology.
+    statusSnapshot = nextSnapshot;
+    return nextSnapshot;
   }
 
   // ------------------------------------------------------------------
   // Process-memory cache of open issues + PRs. GitHub content must not be
   // persisted on the central BB server; the owning host remains the source.
   // ------------------------------------------------------------------
-  let cachedItems: CachedItem[] = [];
-
   // Remove content persisted by older GitHub plugin versions. The plugin's
   // database may also contain its migration ledger, so only delete item rows.
   const legacyDb = bb.storage.database();
@@ -640,12 +955,13 @@ export default async function plugin(bb: BbPluginApi) {
         "--limit", String(CLOSED_PR_PAGE), "--json", fields,
       ]),
     ]);
-    return [
+    const rows = [
       ...toItems(openIssues, repo, "issue"),
       ...toItems(closedIssues, repo, "issue"),
       ...toItems(openPrs, repo, "pr"),
       ...toItems(closedPrs, repo, "pr"),
     ];
+    return [...new Map(rows.map((item) => [`${item.kind}:${item.repo}#${item.number}`, item])).values()];
   }
 
   function replaceRepoRows(repo: string, items: CachedItem[]): void {
@@ -673,34 +989,74 @@ export default async function plugin(bb: BbPluginApi) {
 
   let lastSyncedAt: string | null = null;
 
-  async function syncAll(force = false): Promise<{ repos: number; items: number }> {
-    await checkAuth();
-    const repos = await discoverRepos(force);
+  async function syncAll(force = false): Promise<{
+    repos: number;
+    items: number;
+    failedHosts: Array<{ hostId: string; detail: string }>;
+  }> {
+    const snapshot = await checkAuth(force);
+    const repos = snapshot.discovery.repos;
+    const readyHosts = new Set(
+      snapshot.hosts
+        .filter((host) => host.state === "ready")
+        .map((host) => host.hostId),
+    );
     const before = JSON.stringify(cachedItems);
     let total = 0;
-    for (const { repo } of repos) {
+    const syncFailures = new Map<string, string>();
+    for (const { repo, hostId } of repos) {
+      if (!readyHosts.has(hostId)) continue;
       try {
         const items = await syncRepo(repo);
         replaceRepoRows(repo, items);
         total += items.length;
       } catch (error) {
+        const detail = sanitizeDetail(errorText(error)) || "GitHub sync failed.";
+        syncFailures.set(hostId, detail);
         bb.log.warn(
-          `sync failed for ${repo}: ${error instanceof Error ? error.message : String(error)}`,
+          `sync failed for ${repo}: ${detail}`,
         );
       }
     }
+    const currentRepos = new Set(repos.map(({ repo }) => repo));
+    // Discovery failures are fail-closed for stale content: retain rows from
+    // repositories discovered on ready hosts, but do not continue showing a
+    // repository whose current host/topology could not be verified.
+    cachedItems = cachedItems.filter((item) => currentRepos.has(item.repo));
     const after = JSON.stringify(cachedItems);
     lastSyncedAt = new Date().toISOString();
+    if (syncFailures.size > 0 && statusSnapshot?.discoveryKey === snapshot.discoveryKey) {
+      statusSnapshot = {
+        ...statusSnapshot,
+        hosts: statusSnapshot.hosts.map((host) => {
+          const detail = syncFailures.get(host.hostId);
+          return detail === undefined
+            ? host
+            : { ...host, state: "check-failed", detail };
+        }),
+      };
+    }
+    const failedHosts = new Map(
+      snapshot.hosts
+        .filter((host) => host.state !== "ready")
+        .map((host) => [host.hostId, host.detail ?? "GitHub machine is not ready."]),
+    );
+    for (const [hostId, detail] of syncFailures) failedHosts.set(hostId, detail);
     if (before !== after) {
       bb.realtime.publish("data-changed", { items: total });
     }
     bb.log.info(`synced ${total} item(s) across ${repos.length} repo(s)`);
-    return { repos: repos.length, items: total };
+    return {
+      repos: repos.length,
+      items: total,
+      failedHosts: [...failedHosts.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([hostId, detail]) => ({ hostId, detail })),
+    };
   }
 
-  // Initial sync + 5-minute refresh loop. NeedsConfigurationError from a
-  // missing/unauthenticated gh flips the plugin to needs-configuration
-  // instead of crash-looping.
+  // Initial sync + 5-minute refresh loop. Per-machine gh failures are kept in
+  // the status snapshot, so one unavailable machine cannot stop the others.
   bb.background.service("sync", {
     async start(signal) {
       while (!signal.aborted) {
@@ -720,15 +1076,10 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  // Surface an unconfigured gh immediately instead of waiting for the
-  // service's first crash.
-  try {
-    await checkAuth();
-  } catch (error) {
-    bb.status.needsConfiguration(
-      error instanceof Error ? error.message : String(error),
-    );
-  }
+  // Build the initial status snapshot before registering the RPC handlers.
+  // This is deliberately not a plugin-level needsConfiguration state: missing
+  // gh or credentials belongs to the individual repository machine.
+  await checkAuth(true);
 
   // ------------------------------------------------------------------
   // Issue/PR ↔ thread links (the pills in the UI).
@@ -761,8 +1112,13 @@ export default async function plugin(bb: BbPluginApi) {
   // Spawning agent threads on issues / PR reviews.
   // ------------------------------------------------------------------
   async function resolveProjectId(repo: string): Promise<string> {
-    const repos = await discoverRepos();
-    const info = repos.find((entry) => entry.repo === repo);
+    const discovery = await discoverRepos();
+    if (discovery.conflicts.includes(repo)) {
+      throw new Error(
+        `GitHub repository ${repo} is configured on multiple BB machines. Choose one machine before starting work.`,
+      );
+    }
+    const info = discovery.repos.find((entry) => entry.repo === repo);
     if (info?.projectId != null) return info.projectId;
     const { defaultProject } = await settings.get();
     if (defaultProject) return defaultProject;
@@ -828,12 +1184,19 @@ export default async function plugin(bb: BbPluginApi) {
   // Viewer identity + per-repo assignable users, cached in memory so the
   // filter chips and assignee picker don't hit the network on every render.
   // ------------------------------------------------------------------
-  const viewerCache = new Map<string, { login: string; fetchedAt: number }>();
-
   async function getViewer(repo?: string): Promise<string> {
-    const targetRepo = repo ?? (await discoverRepos())[0]?.repo;
+    const discovery = await discoverRepos();
+    const targetRepo = repo ?? discovery.repos[0]?.repo;
     if (targetRepo === undefined) {
       throw new Error("No GitHub repository is configured");
+    }
+    if (
+      repo === undefined &&
+      new Set(discovery.repos.map(({ hostId }) => hostId)).size > 1
+    ) {
+      throw new Error(
+        "GitHub viewer identity is machine-specific. Select a repository before using the current-user filter.",
+      );
     }
     const cached = viewerCache.get(targetRepo);
     if (cached !== undefined && Date.now() - cached.fetchedAt < 60 * 60_000) {
@@ -845,9 +1208,6 @@ export default async function plugin(bb: BbPluginApi) {
     viewerCache.set(targetRepo, { login, fetchedAt: Date.now() });
     return login;
   }
-
-  const assignableCache = new Map<string, { users: string[]; fetchedAt: number }>();
-  const labelsCache = new Map<string, { labels: string[]; fetchedAt: number }>();
 
   async function getAssignableUsers(repo: string): Promise<string[]> {
     const cached = assignableCache.get(repo);
@@ -887,23 +1247,27 @@ export default async function plugin(bb: BbPluginApi) {
     return labels;
   }
 
+  settings.onChange(() => {
+    // extraRepos and defaultProject both affect repository ownership. Drop the
+    // complete topology/auth snapshot and repo-scoped identity caches so a
+    // newly selected fallback machine cannot inherit another host's login.
+    repoCache = null;
+    statusSnapshot = null;
+    cachedItems = [];
+    lastSyncedAt = null;
+    viewerCache.clear();
+    assignableCache.clear();
+    labelsCache.clear();
+    bb.realtime.publish("data-changed", {});
+  });
+
   // ------------------------------------------------------------------
   // rpc — the frontend data plane.
   // ------------------------------------------------------------------
   bb.rpc.register(githubRpcContract, {
     /** () → auth/sync status for the panel banner. */
     async status() {
-      const repos = await discoverRepos();
-      return {
-        ghOk: ghAuthError === null,
-        ghError: ghAuthError,
-        hosts: [...ghAuthByHost.entries()].map(([hostId, auth]) => ({
-          hostId,
-          ...auth,
-        })),
-        repos: repos.map(({ repo, projectId }) => ({ repo, projectId })),
-        lastSyncedAt,
-      };
+      return statusForRpc(await checkAuth());
     },
 
     /** () → force a full sync now. */
@@ -919,7 +1283,7 @@ export default async function plugin(bb: BbPluginApi) {
           repo: input.repo,
           query: input.query,
           state: input.state,
-          assignee: input.mine === true ? await getViewer() : undefined,
+          assignee: input.mine === true ? await getViewer(input.repo) : undefined,
         }),
       };
     },
@@ -1427,13 +1791,13 @@ export default async function plugin(bb: BbPluginApi) {
           return { exitCode: 0, stdout: USAGE };
         }
         if (sub === "repos") {
-          const repos = await discoverRepos(true);
-          if (repos.length === 0) {
+          const discovery = await discoverRepos(true);
+          if (discovery.repos.length === 0) {
             return { exitCode: 0, stdout: "No tracked repos. Attach a project with a GitHub remote or set extraRepos." };
           }
           return {
             exitCode: 0,
-            stdout: repos
+            stdout: discovery.repos
               .map((entry) => `${entry.repo}${entry.projectId !== null ? `\t(${entry.projectId})` : ""}`)
               .join("\n"),
           };

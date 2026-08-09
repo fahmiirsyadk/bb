@@ -118,9 +118,19 @@ describe("GitHub RPC contract", () => {
 
     await githubPlugin(bb);
     await expect(harness.callRpc("status", null)).resolves.toMatchObject({
-      ghOk: true,
-      hosts: [{ hostId: "host_remote", ok: true, error: null }],
-      repos: [{ repo: "get-bb/bb", projectId: "proj_remote" }],
+      discovery: { state: "ready" },
+      hosts: [
+        {
+          hostId: "host_remote",
+          repositories: ["get-bb/bb"],
+          state: "ready",
+          detail: null,
+          login: null,
+        },
+      ],
+      repositories: [
+        { repo: "get-bb/bb", projectId: "proj_remote", hostId: "host_remote" },
+      ],
     });
     expect(commands).toEqual([
       {
@@ -134,6 +144,490 @@ describe("GitHub RPC contract", () => {
         args: ["auth", "status"],
       },
     ]);
+    await harness.dispose();
+  });
+
+  it("distinguishes an empty repository topology from an authentication failure", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-empty",
+      sdk: { projects: { list: () => [] } },
+      runHostCommand: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: {
+        state: "no-repositories",
+        detail: expect.stringContaining("No GitHub repository machines"),
+      },
+      hosts: [],
+      repositories: [],
+    });
+    expect(harness.needsConfigurationMessages).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("ignores non-GitHub checkouts without turning discovery into an error", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-non-github-source",
+      sdk: {
+        projects: {
+          list: () => [
+            {
+              id: "proj-docs",
+              sources: [
+                {
+                  id: "src-docs",
+                  projectId: "proj-docs",
+                  type: "local_path" as const,
+                  hostId: "host-docs",
+                  path: "/work/docs",
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+      runHostCommand: async (_hostId, input) =>
+        input.executable === "git"
+          ? {
+              exitCode: 1,
+              stdout: "",
+              stderr: "fatal: No such remote 'origin'",
+            }
+          : { exitCode: 0, stdout: "", stderr: "" },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: { state: "no-repositories" },
+      hosts: [],
+      repositories: [],
+    });
+    await harness.dispose();
+  });
+
+  it("shows an unavailable repository host even when its git remote cannot be read", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-discovery-host-failure",
+      sdk: {
+        projects: {
+          list: () => [
+            {
+              id: "proj-offline",
+              sources: [
+                {
+                  id: "src-offline",
+                  projectId: "proj-offline",
+                  type: "local_path" as const,
+                  hostId: "host-offline",
+                  path: "/work/offline",
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+      runHostCommand: async () => {
+        throw new Error("host host-offline is offline");
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: { state: "failed" },
+      hosts: [
+        expect.objectContaining({ hostId: "host-offline", state: "offline" }),
+      ],
+      repositories: [],
+    });
+    await harness.dispose();
+  });
+
+  it("reports authentication independently for multiple repository machines", async () => {
+    const projects = [
+      {
+        id: "proj-alice",
+        sources: [
+          {
+            id: "src-alice",
+            projectId: "proj-alice",
+            type: "local_path" as const,
+            hostId: "host-alice",
+            path: "/work/alice",
+            isDefault: true,
+          },
+        ],
+      },
+      {
+        id: "proj-bob",
+        sources: [
+          {
+            id: "src-bob",
+            projectId: "proj-bob",
+            type: "local_path" as const,
+            hostId: "host-bob",
+            path: "/work/bob",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-host-status",
+      sdk: { projects: { list: () => projects } },
+      runHostCommand: async (hostId, input) => {
+        if (input.executable === "git") {
+          return {
+            exitCode: 0,
+            stdout:
+              hostId === "host-alice"
+                ? "https://github.com/acme/alice.git\n"
+                : "https://github.com/acme/bob.git\n",
+            stderr: "",
+          };
+        }
+        if (hostId === "host-bob") {
+          return {
+            exitCode: 1,
+            stdout: "You are not logged into any GitHub hosts.\n",
+            stderr: "",
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: "Logged in to github.com account alice (keyring)\n",
+          stderr: "",
+        };
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: { state: "ready" },
+      hosts: [
+        {
+          hostId: "host-alice",
+          repositories: ["acme/alice"],
+          state: "ready",
+          login: "alice",
+        },
+        {
+          hostId: "host-bob",
+          repositories: ["acme/bob"],
+          state: "gh-not-authenticated",
+          detail: expect.stringContaining("gh auth login"),
+          login: null,
+        },
+      ],
+      repositories: [
+        { repo: "acme/alice", projectId: "proj-alice", hostId: "host-alice" },
+        { repo: "acme/bob", projectId: "proj-bob", hostId: "host-bob" },
+      ],
+    });
+    expect(harness.needsConfigurationMessages).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("removes a host from the status snapshot after forced discovery", async () => {
+    let projects: Array<Record<string, unknown>> = [
+      {
+        id: "proj-remote",
+        sources: [
+          {
+            id: "src-remote",
+            projectId: "proj-remote",
+            type: "local_path" as const,
+            hostId: "host-remote",
+            path: "/work/repo",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-topology",
+      sdk: { projects: { list: () => projects } },
+      runHostCommand: async (hostId, input) => {
+        if (input.executable === "git") {
+          return {
+            exitCode: 0,
+            stdout: "https://github.com/acme/repo.git\n",
+            stderr: "",
+          };
+        }
+        return { exitCode: 0, stdout: "[]", stderr: "" };
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      hosts: [{ hostId: "host-remote" }],
+    });
+    projects = [];
+    await harness.callRpc("refresh", null);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: { state: "no-repositories" },
+      hosts: [],
+      repositories: [],
+    });
+    await harness.dispose();
+  });
+
+  it("recovers a host from unauthenticated to ready without plugin reload", async () => {
+    let authenticated = false;
+    const projects = [
+      {
+        id: "proj-remote",
+        sources: [
+          {
+            id: "src-remote",
+            projectId: "proj-remote",
+            type: "local_path" as const,
+            hostId: "host-remote",
+            path: "/work/repo",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-recovery",
+      sdk: { projects: { list: () => projects } },
+      runHostCommand: async (_hostId, input) => {
+        if (input.executable === "git") {
+          return { exitCode: 0, stdout: "https://github.com/acme/repo.git\n", stderr: "" };
+        }
+        if (input.args[0] === "auth" && !authenticated) {
+          return { exitCode: 1, stdout: "not logged in\n", stderr: "" };
+        }
+        return { exitCode: 0, stdout: "[]", stderr: "" };
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      hosts: [{ state: "gh-not-authenticated" }],
+    });
+    authenticated = true;
+    await harness.callRpc("refresh", null);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      hosts: [{ state: "ready" }],
+    });
+    expect(harness.needsConfigurationMessages).toEqual([]);
+    await harness.dispose();
+  });
+
+  it("does not discard ready-host items when another host is offline", async () => {
+    let offline = false;
+    const projects = [
+      {
+        id: "proj-ready",
+        sources: [
+          {
+            id: "src-ready",
+            projectId: "proj-ready",
+            type: "local_path" as const,
+            hostId: "host-ready",
+            path: "/work/ready",
+            isDefault: true,
+          },
+        ],
+      },
+      {
+        id: "proj-offline",
+        sources: [
+          {
+            id: "src-offline",
+            projectId: "proj-offline",
+            type: "local_path" as const,
+            hostId: "host-offline",
+            path: "/work/offline",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-partial-refresh",
+      sdk: { projects: { list: () => projects } },
+      runHostCommand: async (hostId, input) => {
+        if (input.executable === "git") {
+          return {
+            exitCode: 0,
+            stdout: `https://github.com/acme/${hostId === "host-ready" ? "ready" : "offline"}.git\n`,
+            stderr: "",
+          };
+        }
+        if (hostId === "host-offline" && offline) {
+          throw new Error("host host-offline is offline");
+        }
+        if (input.args[0] === "auth") {
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        return hostId === "host-ready"
+          ? {
+              exitCode: 0,
+              stdout: JSON.stringify([
+                {
+                  number: 7,
+                  title: "Keep this item",
+                  state: "OPEN",
+                  author: { login: "alice" },
+                  labels: [],
+                  assignees: [],
+                  url: "https://github.com/acme/ready/issues/7",
+                  body: "body",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
+              ]),
+              stderr: "",
+            }
+          : { exitCode: 0, stdout: "[]", stderr: "" };
+      },
+    });
+
+    await githubPlugin(bb);
+    await harness.callRpc("refresh", null);
+    offline = true;
+    await harness.callRpc("refresh", null);
+    await expect(harness.callRpc("listItems", { kind: "issue" })).resolves.toMatchObject({
+      items: [expect.objectContaining({ repo: "acme/ready", number: 7 })],
+    });
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      hosts: expect.arrayContaining([
+        expect.objectContaining({ hostId: "host-offline", state: "offline" }),
+        expect.objectContaining({ hostId: "host-ready", state: "ready" }),
+      ]),
+    });
+    await harness.dispose();
+  });
+
+  it("invalidates extra repository routing when the default project changes", async () => {
+    const projects = [
+      {
+        id: "proj-one",
+        sources: [
+          {
+            id: "src-one",
+            projectId: "proj-one",
+            type: "local_path" as const,
+            hostId: "host-one",
+            path: "/work/one",
+            isDefault: true,
+          },
+        ],
+      },
+      {
+        id: "proj-two",
+        sources: [
+          {
+            id: "src-two",
+            projectId: "proj-two",
+            type: "local_path" as const,
+            hostId: "host-two",
+            path: "/work/two",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-default-project",
+      settings: { extraRepos: "acme/extra", defaultProject: "proj-one" },
+      sdk: { projects: { list: () => projects } },
+      runHostCommand: async (_hostId, input) =>
+        input.executable === "git"
+          ? { exitCode: 0, stdout: "https://example.com/not-github.git\n", stderr: "" }
+          : { exitCode: 0, stdout: "", stderr: "" },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      repositories: [{ repo: "acme/extra", hostId: "host-one" }],
+    });
+    await harness.setSettings({ defaultProject: "proj-two" });
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      repositories: [{ repo: "acme/extra", hostId: "host-two" }],
+    });
+    await harness.dispose();
+  });
+
+  it("reports discovery errors instead of converting them to an empty state", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-discovery-error",
+      sdk: {
+        projects: {
+          list: () => {
+            throw new Error("project database unavailable");
+          },
+        },
+      },
+      runHostCommand: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: {
+        state: "failed",
+        detail: expect.stringContaining("project database unavailable"),
+      },
+      repositories: [],
+      hosts: [],
+    });
+    await harness.dispose();
+  });
+
+  it("rejects duplicate repository ownership across machines", async () => {
+    const projects = [
+      {
+        id: "proj-one",
+        sources: [
+          {
+            id: "src-one",
+            projectId: "proj-one",
+            type: "local_path" as const,
+            hostId: "host-one",
+            path: "/work/one",
+            isDefault: true,
+          },
+        ],
+      },
+      {
+        id: "proj-two",
+        sources: [
+          {
+            id: "src-two",
+            projectId: "proj-two",
+            type: "local_path" as const,
+            hostId: "host-two",
+            path: "/work/two",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-conflict",
+      sdk: { projects: { list: () => projects } },
+      runHostCommand: async () => ({
+        exitCode: 0,
+        stdout: "https://github.com/acme/shared.git\n",
+        stderr: "",
+      }),
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      discovery: {
+        state: "failed",
+        detail: expect.stringContaining("multiple BB machines"),
+      },
+      hosts: [],
+      repositories: [],
+    });
     await harness.dispose();
   });
 
