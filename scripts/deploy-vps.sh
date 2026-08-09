@@ -184,10 +184,16 @@ if ! node_is_compatible; then
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
   curl -fsSL "https://deb.nodesource.com/setup_${node_major}.x" | bash -
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades nodejs
+  node_package_version=$(apt-cache madison nodejs | awk -v major="$node_major" '$3 ~ ("^" major "\\.") && !found { print $3; found=1 }')
+  [[ -n $node_package_version ]] || {
+    echo "NodeSource did not provide a Node.js $node_major package for this VPS" >&2
+    exit 1
+  }
+  log "Installing nodejs package $node_package_version."
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "nodejs=$node_package_version"
 fi
 node_is_compatible || {
-  echo "VPS Node runtime is incompatible with artifact ABI $node_abi" >&2
+  echo "VPS Node runtime $(node --version 2>/dev/null || echo missing) is incompatible with artifact ABI $node_abi" >&2
   exit 1
 }
 
