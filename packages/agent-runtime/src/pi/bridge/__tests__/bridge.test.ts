@@ -107,6 +107,10 @@ vi.mock("../model-runtime.js", () => ({
 }));
 
 import { handleLine } from "../bridge.js";
+import {
+  restorePiBridgeStdout,
+  takeOverPiBridgeStdout,
+} from "../output-guard.js";
 import { PI_BRIDGE_SESSION_DIR_ENV } from "../session-paths.js";
 import { createBridgeJsonRpcTestHarness } from "../../../test/bridge-json-rpc-test-helpers.js";
 
@@ -201,6 +205,66 @@ describe("pi bridge", () => {
       expect(mockGetPiModelRuntime).toHaveBeenCalledWith("/tmp/project-models");
     } finally {
       bridge.restore();
+    }
+  });
+
+  it("keeps extension stdout out of the JSON-RPC protocol channel", async () => {
+    const stderrWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const bridge = createBridgeJsonRpcTestHarness(handleLine);
+    const piSession = createControlledPiAgentSession();
+    mockCreateAgentSession.mockResolvedValue({ session: piSession });
+    takeOverPiBridgeStdout();
+
+    try {
+      bridge.sendRequest(100, "thread/start", {
+        cwd: "/tmp/worktree",
+        threadId: "thread-extension-stdout",
+      });
+      await bridge.waitForResponse(100);
+
+      const terminalNotification = "\u001b]777;notify;π;done\u0007";
+      process.stdout.write(terminalNotification);
+      piSession.emit(createAgentEndEvent());
+      await bridge.flushWork();
+
+      expect(stderrWrite).toHaveBeenCalledWith(terminalNotification);
+      expect(bridge.messages).toContainEqual(
+        expect.objectContaining({
+          method: "sdk/message",
+          params: {
+            threadId: "thread-extension-stdout",
+            message: createAgentEndEvent(),
+          },
+        }),
+      );
+    } finally {
+      restorePiBridgeStdout();
+      bridge.restore();
+      stderrWrite.mockRestore();
+    }
+  });
+
+  it("forwards redirected stderr backpressure through stdout", () => {
+    const stderrWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => false);
+    const stdoutDrain = vi.fn();
+    process.stdout.once("drain", stdoutDrain);
+    takeOverPiBridgeStdout();
+
+    try {
+      expect(process.stdout.write("extension output")).toBe(false);
+      expect(stdoutDrain).not.toHaveBeenCalled();
+
+      process.stderr.emit("drain");
+
+      expect(stdoutDrain).toHaveBeenCalledOnce();
+    } finally {
+      restorePiBridgeStdout();
+      process.stdout.off("drain", stdoutDrain);
+      stderrWrite.mockRestore();
     }
   });
 

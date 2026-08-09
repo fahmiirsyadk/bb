@@ -295,7 +295,7 @@ const PROVIDER_CLI_DEFINITIONS = {
   cursor: {
     key: "cursor",
     displayName: "Cursor",
-    executableName: "agent",
+    executableName: "cursor-agent",
     npmPackageName: null,
     minimumSupportedVersion: null,
     installCommand: {
@@ -304,8 +304,8 @@ const PROVIDER_CLI_DEFINITIONS = {
     },
     updateCommand: {
       commandKind: "exec",
-      displayCommand: "agent update",
-      command: "agent",
+      displayCommand: "cursor-agent update",
+      command: "cursor-agent",
       args: ["update"],
     },
   },

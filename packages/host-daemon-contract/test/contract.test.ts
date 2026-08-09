@@ -1044,10 +1044,11 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // Version 88 includes the daemon's actual local API port in session open so
-  // browser clients do not keep probing a stale configured default.
-  it("uses protocol version 88 for the combined host contract", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(88);
+  // Version 90 combines the fork's local API port session field with upstream's
+  // turn-qualified ACP fileChange item ids. Either independently shipped v88
+  // or v89 daemon has an incomplete wire contract and must update.
+  it("uses protocol version 90 for the combined host contract", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(90);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {

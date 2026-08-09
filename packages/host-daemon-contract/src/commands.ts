@@ -35,7 +35,7 @@ import {
   providerCliStatusResponseSchema,
 } from "./local.js";
 
-export const HOST_DAEMON_PROTOCOL_VERSION = 88 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 90 as const;
 export const PLUGIN_COMMAND_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
 
 export {

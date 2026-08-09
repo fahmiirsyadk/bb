@@ -592,9 +592,11 @@ describe("codex provider adapter", () => {
         approvalsReviewer: "user",
         sandbox: "danger-full-access",
         cwd: "/tmp/worktree",
+        ephemeral: false,
         experimentalRawEvents: true,
       },
     });
+    expect(JSON.stringify(cmd)).not.toContain("persistExtendedHistory");
     expect(JSON.stringify(cmd)).not.toContain("baseInstructions");
     expect(JSON.stringify(cmd)).not.toContain("developerInstructions");
   });
@@ -1756,6 +1758,7 @@ describe("codex provider adapter", () => {
         ],
       },
     });
+    expect(JSON.stringify(cmd)).not.toContain("persistExtendedHistory");
   });
 
   it("buildCommand maps max reasoning level through to Codex", () => {
@@ -1871,6 +1874,7 @@ describe("codex provider adapter", () => {
         cwd: "/tmp/worktree",
       },
     });
+    expect(JSON.stringify(cmd)).not.toContain("persistExtendedHistory");
     expect(JSON.stringify(cmd)).not.toContain("baseInstructions");
     expect(JSON.stringify(cmd)).not.toContain("developerInstructions");
   });

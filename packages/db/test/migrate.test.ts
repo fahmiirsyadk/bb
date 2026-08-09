@@ -3534,8 +3534,10 @@ describe("migrate", () => {
         tableName: "events",
       }).filter((name) => !name.startsWith("sqlite_"));
       expect(eventIndexNames).toEqual([
+        "events_background_task_thread_type_item_sequence_idx",
         "events_completed_item_truncation_idx",
         "events_environment_idx",
+        "events_goal_thread_sequence_idx",
         "events_thread_sequence_idx",
         "events_thread_turn_type_item_sequence_idx",
         "events_thread_type_item_kind_sequence_idx",
