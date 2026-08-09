@@ -495,14 +495,16 @@ describe("suppressPromptEditorAnchorActivation", () => {
 });
 
 describe("PromptBoxInternal working state", () => {
-  it("exposes the working state for the composer beam only while active", () => {
+  it("keeps the composer beam mounted through its upstream fade-out", () => {
     const props = createPromptBoxProps({
       submission: { isRunning: true },
     });
     const view = render(<PromptBoxInternal {...props} />);
     const form = view.container.querySelector("[data-promptbox]");
 
-    expect(form?.getAttribute("data-promptbox-working")).toBe("");
+    expect(form?.getAttribute("data-beam")).toBe("prompt");
+    expect(form?.querySelector("[data-beam-bloom]")).not.toBeNull();
+    expect(form?.getAttribute("data-active")).toBe("");
 
     view.rerender(
       <PromptBoxInternal
@@ -510,15 +512,24 @@ describe("PromptBoxInternal working state", () => {
         submission={{ isRunning: false, isSubmitting: true }}
       />,
     );
-    expect(form?.getAttribute("data-promptbox-working")).toBe("");
+    expect(form?.getAttribute("data-active")).toBe("");
 
-    view.rerender(
-      <PromptBoxInternal
-        {...props}
-        submission={{ isRunning: false, isSubmitting: false }}
-      />,
-    );
-    expect(form?.getAttribute("data-promptbox-working")).toBeNull();
+    vi.useFakeTimers();
+    try {
+      view.rerender(
+        <PromptBoxInternal
+          {...props}
+          submission={{ isRunning: false, isSubmitting: false }}
+        />,
+      );
+      expect(form?.getAttribute("data-active")).toBeNull();
+      expect(form?.getAttribute("data-fading")).toBe("");
+
+      act(() => vi.advanceTimersByTime(500));
+      expect(form?.getAttribute("data-fading")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
