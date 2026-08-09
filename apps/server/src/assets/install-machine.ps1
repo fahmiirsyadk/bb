@@ -87,6 +87,7 @@ Set-Content -Path $portFile -Value $port -Encoding ascii
 $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if ($null -eq $npmCommand) { $npmCommand = Get-Command npm -ErrorAction SilentlyContinue }
 if ($null -eq $npmCommand) { Fail "bb-app installation requires npm (bundled with Node.js)." }
+$npmInstallScriptAllowList = "@parcel/watcher,better-sqlite3,node-pty,@google/genai,protobufjs"
 
 $packagePath = Join-Path $env:TEMP ("bb-app-{0}.tgz" -f ([Guid]::NewGuid().ToString("N")))
 $packageAvailable = $false
@@ -99,11 +100,11 @@ try {
 }
 if ($packageAvailable) {
   Write-Host "Installing the server's bb-app build..."
-  & $npmCommand.Source install --global $packagePath
+  & $npmCommand.Source install --global "--allow-scripts=$npmInstallScriptAllowList" $packagePath
   if ($LASTEXITCODE -ne 0) { Fail "Could not install bb-app globally for this Windows user." }
 } elseif ($null -eq (Get-Command bb-app.cmd -ErrorAction SilentlyContinue)) {
   Write-Host "The server does not provide a package; installing bb-app from npm..."
-  & $npmCommand.Source install --global bb-app
+  & $npmCommand.Source install --global "--allow-scripts=$npmInstallScriptAllowList" bb-app
   if ($LASTEXITCODE -ne 0) { Fail "Could not install bb-app from npm." }
 }
 Remove-Item -Force -ErrorAction SilentlyContinue $packagePath
@@ -174,7 +175,7 @@ if (-not $alreadyJoined) {
   }
   if (-not $connected) {
     if (-not $joinProcess.HasExited) { $joinProcess.Kill() }
-    Fail "Timed out waiting for the host daemon to connect. See $joinLog."
+    Fail "The host daemon did not connect. See $joinLog and $joinErrorLog."
   }
   Write-Host "Joined successfully."
 }
