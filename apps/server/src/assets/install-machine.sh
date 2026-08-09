@@ -79,6 +79,19 @@ require_npm() {
   fi
 }
 
+resolve_npm_global_bb_app() {
+  npm_prefix=$(npm prefix -g) || {
+    echo "Could not determine npm's global installation directory." >&2
+    return 1
+  }
+  npm_bb_app="${npm_prefix%/}/bin/bb-app"
+  if [ ! -x "$npm_bb_app" ]; then
+    echo "npm installed bb-app, but $npm_bb_app is not executable." >&2
+    return 1
+  fi
+  printf '%s\n' "$npm_bb_app"
+}
+
 server_host=$(node -e '
   const url = new URL(process.argv[1]);
   process.stdout.write(url.host.replace(/[^a-zA-Z0-9.-]/gu, "-"));
@@ -284,6 +297,10 @@ if [ "$package_status" -ge 200 ] && [ "$package_status" -lt 300 ]; then
     echo "Could not install bb-app globally. Fix npm global-install permissions, then rerun this command." >&2
     exit 1
   fi
+  bb_app=$(resolve_npm_global_bb_app) || {
+    rm -rf "$package_dir"
+    exit 1
+  }
 elif command -v bb-app >/dev/null 2>&1; then
   bb_app=$(command -v bb-app)
   if [ "$package_status" = 404 ]; then
@@ -299,6 +316,10 @@ elif [ "$package_status" = 404 ]; then
     echo "Could not install bb-app globally. Fix npm global-install permissions, then rerun this command." >&2
     exit 1
   fi
+  bb_app=$(resolve_npm_global_bb_app) || {
+    rm -rf "$package_dir"
+    exit 1
+  }
 else
   rm -rf "$package_dir"
   echo "Could not download the server's bb-app package from $package_url (HTTP $package_status)." >&2

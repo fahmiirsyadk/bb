@@ -191,6 +191,10 @@ esac
   writeExecutable(
     join(fixture.binDir, "npm"),
     `#!/bin/sh
+if [ "$*" = "prefix -g" ]; then
+  printf '%s\n' ${JSON.stringify(join(fixture.binDir, ".."))}
+  exit 0
+fi
 printf '%s\n' "$*" >>"${npmLog}"
 cp "${bbAppTemplatePath}" "${bbAppPath}"
 chmod +x "${bbAppPath}"
@@ -341,6 +345,25 @@ describe("machine install script", () => {
       "utf8",
     );
     expect(npmInvocation).toMatch(/^install -g \/.*bb-app\..*\.tgz$/mu);
+    const daemonPid = Number(
+      readFileSync(join(fixture.dataDir, "install-daemon.pid"), "utf8"),
+    );
+    process.kill(daemonPid, "SIGTERM");
+  });
+
+  it("launches the bb-app installed by npm instead of a stale PATH executable", () => {
+    const fixture = createFixture();
+    writeServerInstallTools(fixture, 200);
+    const staleBinDir = join(fixture.homeDir, "stale-bin");
+    mkdirSync(staleBinDir, { recursive: true });
+    writeExecutable(join(staleBinDir, "bb-app"), "#!/bin/sh\nexit 99\n");
+
+    const result = runScript(JOIN_ARGS, fixture, {
+      BB_INSTALL_SKIP_SERVICE: "1",
+      PATH: [staleBinDir, fixture.binDir, "/usr/bin", "/bin"].join(delimiter),
+    });
+
+    expect(result.status, result.stderr).toBe(0);
     const daemonPid = Number(
       readFileSync(join(fixture.dataDir, "install-daemon.pid"), "utf8"),
     );
