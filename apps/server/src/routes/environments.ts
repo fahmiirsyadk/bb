@@ -259,6 +259,16 @@ function resolveDiffFileRef(
   }
 }
 
+/** Join a repository-relative path using the path syntax of its host. The
+ * server can be Linux while an environment lives on Windows (or vice versa),
+ * so node:path's default platform is not necessarily the daemon's platform. */
+function joinHostPath(rootPath: string, relativePath: string): string {
+  const segments = relativePath.split("/");
+  return path.win32.isAbsolute(rootPath) && !path.posix.isAbsolute(rootPath)
+    ? path.win32.join(rootPath, ...segments)
+    : path.posix.join(rootPath, ...segments);
+}
+
 /** Shared `not_applicable` body for the diff routes on non-git environments. */
 const NON_GIT_DIFF_NOT_APPLICABLE = {
   outcome: "not_applicable",
@@ -523,20 +533,35 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
     const repoRelativePath = query.path.replace(/^\/+/u, "");
     if (
       repoRelativePath.length === 0 ||
-      repoRelativePath.split("/").includes("..")
+      repoRelativePath.includes("\\") ||
+      repoRelativePath.includes("\0") ||
+      repoRelativePath
+        .split("/")
+        .some(
+          (segment) =>
+            segment.length === 0 || segment === "." || segment === "..",
+        )
     ) {
       throw new ApiError(400, "invalid_request", "Invalid path");
     }
-    const absolutePath = path.join(environment.path, repoRelativePath);
     const ref = resolveDiffFileRef(query);
     const result = await callHostRetryableOnlineRpc(deps, {
       hostId: environment.hostId,
       timeoutMs: COMMAND_TIMEOUT_MS,
       command: {
-        type: "host.read_file",
-        path: absolutePath,
-        rootPath: environment.path,
-        ...(ref !== undefined ? { ref } : {}),
+        ...(ref === undefined
+          ? {
+              type: "host.read_file_relative" as const,
+              rootPath: environment.path,
+              path: repoRelativePath,
+              dotfiles: "allow" as const,
+            }
+          : {
+              type: "host.read_file" as const,
+              path: joinHostPath(environment.path, repoRelativePath),
+              rootPath: environment.path,
+              ref,
+            }),
       },
     });
     return context.json({

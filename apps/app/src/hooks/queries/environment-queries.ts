@@ -276,14 +276,23 @@ export function useEnvironmentFilePreview(
           "useEnvironmentFilePreview",
         ),
         path: resolvedPath,
-        side: resolvedSource.kind === "working-tree" ? "new" : "old",
+        side:
+          resolvedSource.kind === "working-tree" ||
+          (resolvedSource.kind === "commit" && resolvedSource.side === "new")
+            ? "new"
+            : "old",
         signal,
         ...(resolvedSource.kind === "merge-base"
           ? {
               target: "branch_committed" as const,
               mergeBaseRef: resolvedSource.ref,
             }
-          : { target: "uncommitted" as const }),
+          : resolvedSource.kind === "commit"
+            ? {
+                target: "commit" as const,
+                sha: resolvedSource.sha,
+              }
+            : { target: "uncommitted" as const }),
       });
       return buildEnvironmentFilePreview(resolvedPath, response);
     },

@@ -177,6 +177,7 @@ import { isSecondaryFileTab } from "@/components/secondary-panel/secondaryPanelT
 import { useThreadOpenFileSignal } from "@/components/secondary-panel/useThreadOpenFileSignal";
 import type { PromptMentionLinkResolver } from "@/components/promptbox/editor/prompt-mention-link";
 import type { SecondaryPanelFileTab } from "@/components/secondary-panel/ThreadSecondaryPanel";
+import type { DiffFilePreviewRequest } from "@/components/secondary-panel/git-diff/diff-file-preview";
 import { useEnvironmentMergeBase } from "@/components/secondary-panel/git-diff/useEnvironmentMergeBase";
 import { useThreadGitActions } from "./useThreadGitActions";
 import { useThreadReadTracking } from "@/hooks/useThreadReadTracking";
@@ -2163,6 +2164,17 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
     },
     [openWorkspaceFile],
   );
+  const handleOpenDiffFilePreview = useCallback(
+    (request: DiffFilePreviewRequest) => {
+      openWorkspaceFile({
+        lineRange: null,
+        path: request.path,
+        source: request.source,
+        statusLabel: request.statusLabel,
+      });
+    },
+    [openWorkspaceFile],
+  );
 
   if (threadQueryState.status === "loading") {
     return (
@@ -2557,6 +2569,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
             onFileTabReorder: reorderFileTab,
             onOpenNewTab: handleOpenNewTab,
             onOpenFilePreview: handleOpenFilePreview,
+            onOpenDiffFilePreview: handleOpenDiffFilePreview,
             onSelectionAddToChat: handleSelectionAddToChat,
             onPanelFocus: handleSecondaryPanelFocus,
             onPanelChange: handleSecondaryPanelChange,

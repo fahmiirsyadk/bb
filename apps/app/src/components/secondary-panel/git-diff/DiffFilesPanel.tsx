@@ -13,6 +13,10 @@ import {
 import { cn } from "@bb/shared-ui/lib/utils";
 import { DiffFileCard } from "./DiffFileCard";
 import {
+  buildDiffFilePreviewRequest,
+  type DiffFilePreviewRequest,
+} from "./diff-file-preview";
+import {
   diffFileCardStateAtomFamily,
   estimateCardHeight,
   resolveCardCollapsed,
@@ -45,6 +49,7 @@ export interface DiffFilesPanelProps {
   filesUpdatedAt: number;
   diffViewOptions: Record<string, string | boolean | number>;
   filePathRoot?: string | null;
+  mergeBaseRef: string | null;
   /**
    * True while the TOC query is serving cross-target placeholder data (the
    * previous diff target's slice). The scroll-to-file effect waits for the real
@@ -60,6 +65,7 @@ export interface DiffFilesPanelProps {
   onScrolledToPath?: () => void;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
+  onOpenDiffFilePreview?: (request: DiffFilePreviewRequest) => void;
   onRequestFileContents?: RequestDiffFileContents;
   onSelectionAddToChat?: (text: string) => void;
 }
@@ -80,11 +86,13 @@ export function DiffFilesPanel({
   filesUpdatedAt,
   diffViewOptions,
   filePathRoot,
+  mergeBaseRef,
   isPlaceholderData,
   scrollToPath,
   onScrolledToPath,
   onOpenFileInEditor,
   onOpenFilePreview,
+  onOpenDiffFilePreview,
   onRequestFileContents,
   onSelectionAddToChat,
 }: DiffFilesPanelProps) {
@@ -220,11 +228,14 @@ export function DiffFilesPanel({
                 fileCount={files.length}
                 diffViewOptions={diffViewOptions}
                 filePathRoot={filePathRoot}
+                mergeBaseRef={mergeBaseRef}
+                target={target}
                 patchState={getPatchState(entry.path)}
                 loadPath={loadPath}
                 retry={retry}
                 onOpenFileInEditor={onOpenFileInEditor}
                 onOpenFilePreview={onOpenFilePreview}
+                onOpenDiffFilePreview={onOpenDiffFilePreview}
                 onRequestFileContents={onRequestFileContents}
                 onSelectionAddToChat={onSelectionAddToChat}
               />
@@ -245,11 +256,14 @@ interface DiffFileRowProps {
   fileCount: number;
   diffViewOptions: Record<string, string | boolean | number>;
   filePathRoot?: string | null;
+  mergeBaseRef: string | null;
+  target: WorkspaceDiffTarget;
   patchState: DiffPatchState;
   loadPath: LoadDiffPatchPath;
   retry: RetryDiffPatchPath;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
+  onOpenDiffFilePreview?: (request: DiffFilePreviewRequest) => void;
   onRequestFileContents?: RequestDiffFileContents;
   onSelectionAddToChat?: (text: string) => void;
 }
@@ -260,11 +274,14 @@ function DiffFileRow({
   fileCount,
   diffViewOptions,
   filePathRoot,
+  mergeBaseRef,
+  target,
   patchState,
   loadPath,
   retry,
   onOpenFileInEditor,
   onOpenFilePreview,
+  onOpenDiffFilePreview,
   onRequestFileContents,
   onSelectionAddToChat,
 }: DiffFileRowProps) {
@@ -290,6 +307,10 @@ function DiffFileRow({
   const handleRetry = useCallback(() => {
     retry(entry.path);
   }, [entry.path, retry]);
+  const previewRequest = useMemo(
+    () => buildDiffFilePreviewRequest({ entry, mergeBaseRef, target }),
+    [entry, mergeBaseRef, target],
+  );
 
   return (
     <DiffFileCard
@@ -303,6 +324,8 @@ function DiffFileRow({
       onRetry={handleRetry}
       onOpenFileInEditor={onOpenFileInEditor}
       onOpenFilePreview={onOpenFilePreview}
+      onOpenDiffFilePreview={onOpenDiffFilePreview}
+      previewRequest={previewRequest}
       onRequestFileContents={onRequestFileContents}
       onSelectionAddToChat={onSelectionAddToChat}
     />

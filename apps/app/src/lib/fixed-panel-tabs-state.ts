@@ -43,6 +43,13 @@ const environmentFilePreviewSourceSchema: z.ZodType<EnvironmentFilePreviewSource
         ref: z.string().min(1),
       })
       .strict(),
+    z
+      .object({
+        kind: z.literal("commit"),
+        sha: z.string().regex(/^[0-9a-f]{4,40}$/iu),
+        side: z.enum(["old", "new"]),
+      })
+      .strict(),
   ]);
 const workspaceFilePreviewStatusLabelSchema: z.ZodType<WorkspaceFilePreviewStatusLabel | null> =
   z.literal("deleted").nullable();
@@ -134,17 +141,19 @@ const pluginPanelFixedPanelTabSchema = z
     title: z.string().min(1),
   })
   .strict();
-const secondaryFixedPanelTabSchema = z.union([
-  threadInfoFixedPanelTabSchema,
-  gitDiffFixedPanelTabSchema,
-  pluginPanelFixedPanelTabSchema,
-  workspaceFilePreviewFixedPanelTabSchema,
-  hostFilePreviewFixedPanelTabSchema,
-  threadStorageFilePreviewFixedPanelTabSchema,
-  browserFixedPanelTabSchema,
-  newTabFixedPanelTabSchema,
-  terminalFixedPanelTabSchema,
-]);
+const secondaryFixedPanelTabSchema: z.ZodType<SecondaryFixedPanelTab> = z.union(
+  [
+    threadInfoFixedPanelTabSchema,
+    gitDiffFixedPanelTabSchema,
+    pluginPanelFixedPanelTabSchema,
+    workspaceFilePreviewFixedPanelTabSchema,
+    hostFilePreviewFixedPanelTabSchema,
+    threadStorageFilePreviewFixedPanelTabSchema,
+    browserFixedPanelTabSchema,
+    newTabFixedPanelTabSchema,
+    terminalFixedPanelTabSchema,
+  ],
+);
 /**
  * The native side chat is gone, but persisted panel state can still hold its
  * tabs. Drop them at the parse boundary so old state loads and the removed

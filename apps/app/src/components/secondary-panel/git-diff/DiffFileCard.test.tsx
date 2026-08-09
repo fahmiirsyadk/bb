@@ -30,11 +30,13 @@ function renderCard({
   entry,
   onLoadPatch = vi.fn(),
   onRequestFileContents,
+  onOpenFilePreview,
   patchState = { status: "idle" },
 }: {
   entry: DiffFileEntry;
   onLoadPatch?: () => void;
   onRequestFileContents?: RequestDiffFileContents;
+  onOpenFilePreview?: (path: string) => void;
   patchState?: DiffPatchState;
 }) {
   render(
@@ -46,6 +48,7 @@ function renderCard({
       patchState={patchState}
       onLoadPatch={onLoadPatch}
       onRetry={() => {}}
+      onOpenFilePreview={onOpenFilePreview}
       onRequestFileContents={onRequestFileContents}
     />,
   );
@@ -145,5 +148,46 @@ describe("DiffFileCard", () => {
     expect(screen.getByText("Load diff")).toBeTruthy();
     expect(onRequestFileContents).toHaveBeenCalledTimes(2);
     expect(onLoadPatch).not.toHaveBeenCalled();
+  });
+
+  it("renders metadata for a loaded empty patch instead of a dead end", async () => {
+    const onOpenFilePreview = vi.fn();
+    renderCard({
+      entry: buildEntry({
+        path: "src/new-name.ts",
+        previousPath: "src/old-name.ts",
+        changeKind: "renamed",
+        additions: 0,
+        deletions: 0,
+      }),
+      onOpenFilePreview,
+      patchState: { status: "loaded", patch: "", truncated: false },
+    });
+
+    expect(await screen.findByText("Metadata-only change")).toBeTruthy();
+    expect(
+      screen.getByText("Renamed from src/old-name.ts to src/new-name.ts."),
+    ).toBeTruthy();
+    expect(screen.queryByText("No renderable diff for this file.")).toBeNull();
+    screen.getByRole("button", { name: "Open file" }).click();
+    expect(onOpenFilePreview).toHaveBeenCalledWith("src/new-name.ts");
+  });
+
+  it("shows malformed or truncated patch text with an open-file fallback", async () => {
+    const onOpenFilePreview = vi.fn();
+    const rawPatch = "not a parseable unified diff";
+    renderCard({
+      entry: buildEntry(),
+      onOpenFilePreview,
+      patchState: { status: "loaded", patch: rawPatch, truncated: true },
+    });
+
+    expect(await screen.findByText("Raw diff")).toBeTruthy();
+    expect(
+      screen.getByText("This patch was truncated before it could be rendered."),
+    ).toBeTruthy();
+    expect(screen.getByText(rawPatch)).toBeTruthy();
+    screen.getByRole("button", { name: "Show full diff" }).click();
+    expect(onOpenFilePreview).toHaveBeenCalledWith("src/file.ts");
   });
 });

@@ -138,7 +138,10 @@ export const GitDiffCard = memo(function GitDiffCard({
   // Pure renames + identical content land here with zero hunks; nothing for the
   // body to show, so force-collapse and disable the chevron. Image preview cards
   // have a body despite their zero hunks.
-  const hasChanges = fileDiff.hunks.length > 0 || bodyState.isImageCard;
+  const hasChanges =
+    fileDiff.hunks.length > 0 ||
+    bodyState.isImageCard ||
+    bodyState.shouldShowMetadataFallback;
   const supportsCollapse =
     isCollapsed !== undefined && onToggleCollapsed !== undefined;
   const isBodyHidden = !hasChanges || (supportsCollapse && isCollapsed);

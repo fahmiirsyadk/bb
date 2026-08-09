@@ -62,7 +62,8 @@ export type FilePreview =
 export type EnvironmentFilePreviewSource =
   | { kind: "working-tree" }
   | { kind: "head" }
-  | { kind: "merge-base"; ref: string };
+  | { kind: "merge-base"; ref: string }
+  | { kind: "commit"; sha: string; side: "old" | "new" };
 
 export type WorkspaceFilePreviewStatusLabel = "deleted";
 
@@ -155,6 +156,8 @@ export function areEnvironmentFilePreviewSourcesEqual(
       return true;
     case "merge-base":
       return b.kind === "merge-base" && a.ref === b.ref;
+    case "commit":
+      return b.kind === "commit" && a.sha === b.sha && a.side === b.side;
     default: {
       const exhaustive: never = a;
       return exhaustive;

@@ -154,6 +154,18 @@ describe("file-preview", () => {
     ).toBe(false);
     expect(
       areEnvironmentFilePreviewSourcesEqual(
+        { kind: "commit", sha: "abc1234", side: "old" },
+        { kind: "commit", sha: "abc1234", side: "old" },
+      ),
+    ).toBe(true);
+    expect(
+      areEnvironmentFilePreviewSourcesEqual(
+        { kind: "commit", sha: "abc1234", side: "old" },
+        { kind: "commit", sha: "abc1234", side: "new" },
+      ),
+    ).toBe(false);
+    expect(
+      areEnvironmentFilePreviewSourcesEqual(
         { kind: "working-tree" },
         { kind: "head" },
       ),

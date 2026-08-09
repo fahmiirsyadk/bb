@@ -55,6 +55,7 @@ import type { ReuseThreadOption } from "@/components/pickers/WorktreePicker";
 import { HEADER_ICON_BUTTON_CLASS } from "@/components/layout/AppPageHeader";
 import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
 import type { SecondaryPanelFileTab } from "@/components/secondary-panel/ThreadSecondaryPanel";
+import type { DiffFilePreviewRequest } from "@/components/secondary-panel/git-diff/diff-file-preview";
 import { FilePreview } from "@/components/secondary-panel/FilePreview";
 import {
   HostFilePreviewTabContent,
@@ -3098,6 +3099,17 @@ export function RootComposeView() {
     },
     [openWorkspaceFile],
   );
+  const handleOpenDiffFilePreview = useCallback(
+    (request: DiffFilePreviewRequest) => {
+      openWorkspaceFile({
+        lineRange: null,
+        path: request.path,
+        source: request.source,
+        statusLabel: request.statusLabel,
+      });
+    },
+    [openWorkspaceFile],
+  );
   // Standalone compose keeps its panel toggle pinned to the viewport corner.
   // Multi-pane compose publishes its panel model to SplitThreadArea instead,
   // which owns the one stable window-level toggle.
@@ -3552,6 +3564,7 @@ export function RootComposeView() {
             onFileTabReorder: reorderFileTab,
             onOpenNewTab: handleOpenNewTab,
             onOpenFilePreview: handleOpenFilePreview,
+            onOpenDiffFilePreview: handleOpenDiffFilePreview,
             onSelectionAddToChat: handleRootPanelSelectionAddToChat,
             onPanelFocus: handleSecondaryPanelFocus,
             onPanelChange: handleSecondaryPanelChange,

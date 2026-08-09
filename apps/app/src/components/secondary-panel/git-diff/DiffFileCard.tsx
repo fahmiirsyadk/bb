@@ -5,6 +5,8 @@ import {
   getGitDiffCardImageSizeStat,
   GitDiffCardBody,
   GitDiffCardImagePreviewBody,
+  GitDiffMetadataFallback,
+  GitDiffRawFallback,
   useGitDiffCardBody,
   type DiffFileContentsResult,
   type DiffImageSizeStat,
@@ -30,6 +32,7 @@ import { FilePathLink } from "@/components/ui/file-path-link.js";
 import { Skeleton } from "@bb/shared-ui/skeleton";
 import type { DiffPatchState } from "@/hooks/queries/use-environment-diff-patches";
 import { cn } from "@bb/shared-ui/lib/utils";
+import type { DiffFilePreviewRequest } from "./diff-file-preview";
 
 /**
  * Build the file label for a TOC entry. Renames/copies read as `old -> new`;
@@ -133,6 +136,8 @@ export interface DiffFileCardProps {
   onRetry: () => void;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
+  onOpenDiffFilePreview?: (request: DiffFilePreviewRequest) => void;
+  previewRequest?: DiffFilePreviewRequest;
   onRequestFileContents?: RequestDiffFileContents;
   onSelectionAddToChat?: (text: string) => void;
 }
@@ -146,7 +151,7 @@ export interface DiffFileCardProps {
  * - `auto`: render the parsed patch once it arrives (reusing
  *   {@link GitDiffCardBody}); a `truncated` patch shows a "Show full diff"
  *   affordance; a loaded patch that parses to no renderable file (empty / pure
- *   rename / mode-only) shows a terminal "No renderable diff" notice; while the
+ *   rename / mode-only) shows a metadata or raw-patch fallback; while the
  *   patch loads it shows a skeleton.
  * - `on_demand`: header + stat + a "Load diff" button that triggers the fetch.
  * - `too_large`: header + a "too large" notice + a link to open the file.
@@ -182,6 +187,8 @@ function areDiffFileCardPropsEqual(
     previous.onRetry === next.onRetry &&
     previous.onOpenFileInEditor === next.onOpenFileInEditor &&
     previous.onOpenFilePreview === next.onOpenFilePreview &&
+    previous.onOpenDiffFilePreview === next.onOpenDiffFilePreview &&
+    previous.previewRequest === next.previewRequest &&
     previous.onRequestFileContents === next.onRequestFileContents &&
     previous.onSelectionAddToChat === next.onSelectionAddToChat &&
     arePatchStatesEqual(previous.patchState, next.patchState)
@@ -284,9 +291,17 @@ export const DiffFileCard = memo(function DiffFileCard({
   onRetry,
   onOpenFileInEditor,
   onOpenFilePreview,
+  onOpenDiffFilePreview,
+  previewRequest,
   onRequestFileContents,
   onSelectionAddToChat,
 }: DiffFileCardProps) {
+  const openFilePreview = useMemo(() => {
+    if (onOpenDiffFilePreview !== undefined && previewRequest !== undefined) {
+      return () => onOpenDiffFilePreview(previewRequest);
+    }
+    return onOpenFilePreview;
+  }, [onOpenDiffFilePreview, onOpenFilePreview, previewRequest]);
   const headerModel = useMemo(() => buildDiffEntryHeaderModel(entry), [entry]);
   // The single file's patch, parsed only once it has loaded. The patch hook
   // returns whole-file patch text; we parse just this file (not a blob).
@@ -372,7 +387,7 @@ export const DiffFileCard = memo(function DiffFileCard({
           previousPath={entry.previousPath}
           filePathRoot={filePathRoot}
           onOpenFileInEditor={onOpenFileInEditor}
-          onOpenFilePreview={onOpenFilePreview}
+          onOpenFilePreview={openFilePreview}
           isCollapsed={isCollapsed}
           onToggleCollapsed={onToggleCollapsed}
           hasChanges
@@ -406,7 +421,7 @@ export const DiffFileCard = memo(function DiffFileCard({
           svgDisplayMode={svgDisplayMode}
           onLoadPatch={onLoadPatch}
           onRetry={onRetry}
-          onOpenFilePreview={onOpenFilePreview}
+          onOpenFilePreview={openFilePreview}
           onRequestFileContents={onRequestFileContents}
           onSelectionAddToChat={onSelectionAddToChat}
           binaryImagePreviewState={
@@ -568,24 +583,35 @@ function DiffFileCardBody({
   }
 
   if (parsedFile === null) {
-    // A `loaded` patch that parses to no renderable file (empty patch / parse
-    // error — common for pure renames and mode-only changes) is terminal: show
-    // a notice with the same open-file affordance the `too_large` tier uses,
-    // never a skeleton that would spin forever. The skeleton is reserved for the
-    // genuinely-not-yet-loaded states below.
     if (patchState.status === "loaded") {
+      const rawPatch = patchState.patch?.trimEnd() ?? "";
+      if (rawPatch.length > 0) {
+        return (
+          <GitDiffRawFallback
+            rawPatch={rawPatch}
+            truncated={patchState.truncated ?? false}
+            onOpenFilePreview={
+              onOpenFilePreview
+                ? () => onOpenFilePreview(entry.path)
+                : undefined
+            }
+            openLabel={patchState.truncated ? "Show full diff" : "Open file"}
+          />
+        );
+      }
       return (
-        <div className={DIFF_FILE_CARD_NOTICE_CLASS}>
-          <span>No renderable diff for this file.</span>
-          {onOpenFilePreview ? (
-            <FilePathLink
-              path={entry.path}
-              displayName="Open file"
-              onClick={() => onOpenFilePreview(entry.path)}
-              className="text-xs underline underline-offset-4"
-            />
-          ) : null}
-        </div>
+        <GitDiffMetadataFallback
+          fileDiff={{
+            name: entry.path,
+            prevName: entry.previousPath ?? undefined,
+            type: "change",
+          }}
+          changeKind={entry.changeKind}
+          isBinary={entry.binary}
+          onOpenFilePreview={
+            onOpenFilePreview ? () => onOpenFilePreview(entry.path) : undefined
+          }
+        />
       );
     }
 
@@ -599,6 +625,7 @@ function DiffFileCardBody({
       patchText={patchState.truncated ? undefined : patchState.patch}
       diffViewOptions={diffViewOptions}
       svgDisplayMode={svgDisplayMode}
+      isBinary={entry.binary}
       truncated={patchState.truncated ?? false}
       onOpenFilePreview={onOpenFilePreview}
       onRequestFileContents={onRequestFileContents}
@@ -613,6 +640,7 @@ interface DiffFileCardRenderedBodyProps {
   patchText?: string;
   diffViewOptions: Record<string, string | boolean | number>;
   svgDisplayMode: GitDiffCardSvgDisplayMode;
+  isBinary: boolean;
   truncated: boolean;
   onOpenFilePreview?: (path: string) => void;
   onRequestFileContents?: RequestDiffFileContents;
@@ -632,6 +660,7 @@ function DiffFileCardRenderedBody({
   patchText,
   diffViewOptions,
   svgDisplayMode,
+  isBinary,
   truncated,
   onOpenFilePreview,
   onRequestFileContents,
@@ -650,6 +679,7 @@ function DiffFileCardRenderedBody({
         state={bodyState}
         diffViewOptions={diffViewOptions}
         svgDisplayMode={svgDisplayMode}
+        isBinary={isBinary}
         reservesCollapseGutter
         onSelectionAddToChat={onSelectionAddToChat}
       />

@@ -24,6 +24,7 @@ import type {
 } from "@/lib/file-preview";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { DiffFilesPanel } from "./git-diff/DiffFilesPanel";
+import type { DiffFilePreviewRequest } from "./git-diff/diff-file-preview";
 import { clearDiffFileCardStates } from "./git-diff/diffFilesStore";
 import { buildGitDiffIdentity } from "./git-diff/gitDiffPanelHelpers";
 import { useDiffFileContentsRequester } from "./git-diff/useDiffFileContentsRequester";
@@ -48,6 +49,7 @@ export interface GitDiffTabContentProps {
   gitDiffViewOptions: Record<string, string | boolean | number>;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
+  onOpenDiffFilePreview?: (request: DiffFilePreviewRequest) => void;
   onSelectionAddToChat?: (text: string) => void;
   workspaceRootPath?: string | null;
 }
@@ -147,6 +149,7 @@ export function GitDiffTabContent({
   gitDiffViewOptions,
   onOpenFileInEditor,
   onOpenFilePreview,
+  onOpenDiffFilePreview,
   onSelectionAddToChat,
   workspaceRootPath,
 }: GitDiffTabContentProps) {
@@ -286,11 +289,13 @@ export function GitDiffTabContent({
       filesUpdatedAt={diffFilesUpdatedAt}
       diffViewOptions={gitDiffViewOptions}
       filePathRoot={workspaceRootPath}
+      mergeBaseRef={mergeBaseRef}
       isPlaceholderData={isDiffFilesPlaceholder}
       scrollToPath={pendingGitDiffScrollPath}
       onScrolledToPath={clearPendingGitDiffScrollPath}
       onOpenFileInEditor={onOpenFileInEditor}
       onOpenFilePreview={onOpenFilePreview}
+      onOpenDiffFilePreview={onOpenDiffFilePreview}
       onRequestFileContents={onRequestFileContents}
       onSelectionAddToChat={onSelectionAddToChat}
     />

@@ -61,6 +61,7 @@ import {
   GitDiffTabContent,
   ThreadInfoTabContent,
 } from "./ThreadSecondaryPanelTabContent";
+import type { DiffFilePreviewRequest } from "./git-diff/diff-file-preview";
 import {
   CHROME_ROW_CLASS,
   getBbDesktopInfo,
@@ -273,6 +274,7 @@ export interface ThreadSecondaryPanelProps {
   workspaceRootPath?: string | null;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
+  onOpenDiffFilePreview?: (request: DiffFilePreviewRequest) => void;
   onSelectionAddToChat?: (text: string) => void;
   /**
    * When true the conversation pane is collapsed: this panel expands to fill
@@ -347,6 +349,7 @@ export function ThreadSecondaryPanel({
   workspaceRootPath,
   onOpenFileInEditor,
   onOpenFilePreview,
+  onOpenDiffFilePreview,
   onSelectionAddToChat,
   isConversationCollapsed,
   onToggleConversationCollapse,
@@ -819,6 +822,7 @@ export function ThreadSecondaryPanel({
             gitDiffViewOptions={gitDiffViewOptions}
             onOpenFileInEditor={onOpenFileInEditor}
             onOpenFilePreview={onOpenFilePreview}
+            onOpenDiffFilePreview={onOpenDiffFilePreview}
             onSelectionAddToChat={onSelectionAddToChat}
             workspaceRootPath={workspaceRootPath}
           />

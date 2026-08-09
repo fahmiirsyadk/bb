@@ -29,6 +29,13 @@ const threadTabEnvironmentFileSourceSchema = z.discriminatedUnion("kind", [
       ref: z.string().min(1).max(THREAD_TAB_PATH_MAX_LENGTH),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("commit"),
+      sha: z.string().regex(/^[0-9a-f]{4,40}$/iu),
+      side: z.enum(["old", "new"]),
+    })
+    .strict(),
 ]);
 
 export const threadTabSchema = z.discriminatedUnion("kind", [

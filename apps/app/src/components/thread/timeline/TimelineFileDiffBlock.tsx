@@ -7,6 +7,7 @@ import {
   type FileChangeAction,
 } from "@bb/thread-view";
 import { GitDiffCard } from "../../git-diff/GitDiffCard.js";
+import { GitDiffMetadataFallback } from "../../git-diff/GitDiffCardBody.js";
 import { EventCodeBlock } from "../../ui/event-code-block.js";
 import { TimelineDetailScroll } from "./TimelineDetailScroll.js";
 import type { ThreadTimelineTheme } from "./types.js";
@@ -210,8 +211,51 @@ function getPlainDiffFallback(
   if (hasRenderablePatch) {
     return null;
   }
+  if (getPatchBodyLines(change.diff).length === 0) {
+    return null;
+  }
   const diff = change.diff?.trimEnd();
   return diff && diff.length > 0 ? diff : null;
+}
+
+function getMetadataFallbackChangeKind(
+  change: TimelineFileChange,
+):
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type_changed"
+  | undefined {
+  switch (change.kind?.toLowerCase()) {
+    case "added":
+    case "created":
+      return "added";
+    case "modified":
+    case "edited":
+      return "modified";
+    case "deleted":
+      return "deleted";
+    case "renamed":
+      return "renamed";
+    case "copied":
+      return "copied";
+    case "type_changed":
+    case "type-changed":
+      return "type_changed";
+    default:
+      return undefined;
+  }
+}
+
+function hasFileMetadata(change: TimelineFileChange): boolean {
+  return (
+    change.kind !== null ||
+    change.movePath !== null ||
+    change.diffStats.added > 0 ||
+    change.diffStats.removed > 0
+  );
 }
 
 function buildRenderedFileChange(
@@ -258,6 +302,20 @@ export const TimelineFileDiffBlock = memo(function TimelineFileDiffBlock({
   );
 
   if (renderablePatch === null && renderedChange.plainDiff === null) {
+    if (hasFileMetadata(change)) {
+      return (
+        <GitDiffMetadataFallback
+          fileDiff={{
+            name: change.path,
+            prevName: change.movePath ?? undefined,
+            type: "change",
+          }}
+          changeKind={getMetadataFallbackChangeKind(change)}
+          rawPatch={change.diff}
+          title="File metadata"
+        />
+      );
+    }
     return (
       <div className="rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs text-muted-foreground">
         No diff available.

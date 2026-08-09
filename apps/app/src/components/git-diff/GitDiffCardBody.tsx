@@ -220,6 +220,7 @@ export interface UseGitDiffCardBodyArgs {
 
 export interface GitDiffCardBodyState {
   bodySentinelRef: RefCallback<HTMLDivElement>;
+  changeKind: GitDiffFileChangeKind;
   enrichment: DiffFileEnrichmentState;
   enrichedFileDiff: ParsedGitDiffFile;
   fileDiffLabel: string;
@@ -227,6 +228,7 @@ export interface GitDiffCardBodyState {
   isSvgPreviewCard: boolean;
   shouldGateDeletedDiff: boolean;
   shouldRenderDiffView: boolean;
+  shouldShowMetadataFallback: boolean;
   loadDeletedDiff: () => void;
   /** The header's `+/-` byte delta for an image card; `null` for text cards. */
   imageSizeStat: DiffImageSizeStat | null;
@@ -298,6 +300,8 @@ export function useGitDiffCardBody({
     isDeletedFile && !isImageCard && !isSvgCard && !hasLoadedDeletedDiff;
   const shouldRenderDiffView =
     hasBodyEnteredViewport && !isRendering && !shouldGateDeletedDiff;
+  const shouldShowMetadataFallback =
+    !isImageCard && !isSvgCard && fileDiff.hunks.length === 0;
   // Fire the fetch once the diff view is actually renderable. Effect deps
   // deliberately exclude `onRequestFileContents` (we read the latest via the
   // ref) so stable visibility doesn't re-trigger when the panel re-renders.
@@ -390,6 +394,7 @@ export function useGitDiffCardBody({
 
   return {
     bodySentinelRef,
+    changeKind,
     enrichment,
     enrichedFileDiff,
     fileDiffLabel,
@@ -397,6 +402,7 @@ export function useGitDiffCardBody({
     isSvgPreviewCard: isSvgCard,
     shouldGateDeletedDiff,
     shouldRenderDiffView,
+    shouldShowMetadataFallback,
     loadDeletedDiff,
     imageSizeStat,
   };
@@ -411,6 +417,152 @@ function GitDiffCardBodySkeleton() {
       <Skeleton className="h-3 w-[90%] rounded-sm" />
       <Skeleton className="h-3 w-[87%] rounded-sm" />
       <Skeleton className="h-3 w-[84%] rounded-sm" />
+    </div>
+  );
+}
+
+export interface GitDiffMetadataFallbackProps {
+  fileDiff: Pick<
+    ParsedGitDiffFile,
+    "name" | "prevName" | "type" | "mode" | "prevMode"
+  >;
+  changeKind?: GitDiffFileChangeKind;
+  isBinary?: boolean;
+  rawPatch?: string | null;
+  title?: string;
+  onOpenFilePreview?: () => void;
+  openLabel?: string;
+}
+
+function getGitDiffMetadataFallbackDetails({
+  fileDiff,
+  changeKind,
+  isBinary,
+}: Pick<
+  GitDiffMetadataFallbackProps,
+  "fileDiff" | "changeKind" | "isBinary"
+>): string[] {
+  const details: string[] = [];
+  const currentPath = normalizeGitDiffPath(fileDiff.name) ?? fileDiff.name;
+  const previousPath = normalizeGitDiffPath(fileDiff.prevName);
+  if (isBinary) {
+    details.push("Binary file cannot be rendered as text.");
+  }
+  if (
+    previousPath !== undefined &&
+    previousPath.length > 0 &&
+    previousPath !== currentPath
+  ) {
+    details.push("Renamed from " + previousPath + " to " + currentPath + ".");
+  }
+  if (
+    fileDiff.prevMode !== undefined &&
+    fileDiff.mode !== undefined &&
+    fileDiff.prevMode !== fileDiff.mode
+  ) {
+    details.push(
+      "File mode changed from " +
+        fileDiff.prevMode +
+        " to " +
+        fileDiff.mode +
+        ".",
+    );
+  }
+  if (changeKind === "type_changed") {
+    details.push("File type changed without line content.");
+  } else if (fileDiff.type === "rename-pure") {
+    details.push("No textual changes.");
+  } else if (fileDiff.type === "new") {
+    details.push("New empty file.");
+  } else if (fileDiff.type === "deleted") {
+    details.push("Deleted empty file.");
+  } else if (details.length === 0) {
+    details.push("No line changes were included in this patch.");
+  }
+  return details;
+}
+
+export function GitDiffMetadataFallback({
+  fileDiff,
+  changeKind,
+  isBinary,
+  rawPatch,
+  title = "Metadata-only change",
+  onOpenFilePreview,
+  openLabel = "Open file",
+}: GitDiffMetadataFallbackProps) {
+  const details = getGitDiffMetadataFallbackDetails({
+    fileDiff,
+    changeKind,
+    isBinary,
+  });
+  return (
+    <div
+      data-git-diff-fallback="metadata"
+      className="space-y-1.5 px-3 py-3 text-xs text-muted-foreground"
+    >
+      <p className="font-medium text-foreground">{title}</p>
+      {details.map((detail) => (
+        <p key={detail}>{detail}</p>
+      ))}
+      {rawPatch !== undefined && rawPatch !== null && rawPatch.length > 0 ? (
+        <pre className="mt-2 max-h-64 overflow-auto rounded border border-border bg-surface-recessed px-2 py-1.5 font-mono text-xs leading-5 whitespace-pre">
+          {rawPatch}
+        </pre>
+      ) : null}
+      {onOpenFilePreview !== undefined ? (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-xs underline underline-offset-4 hover:underline"
+          onClick={onOpenFilePreview}
+        >
+          {openLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+export interface GitDiffRawFallbackProps {
+  rawPatch: string;
+  title?: string;
+  truncated?: boolean;
+  onOpenFilePreview?: () => void;
+  openLabel?: string;
+}
+
+export function GitDiffRawFallback({
+  rawPatch,
+  title = "Raw diff",
+  truncated = false,
+  onOpenFilePreview,
+  openLabel = "Open file",
+}: GitDiffRawFallbackProps) {
+  return (
+    <div
+      data-git-diff-fallback="raw"
+      className="space-y-1.5 px-3 py-3 text-xs text-muted-foreground"
+    >
+      <p className="font-medium text-foreground">{title}</p>
+      {truncated ? (
+        <p>This patch was truncated before it could be rendered.</p>
+      ) : null}
+      <pre className="max-h-80 overflow-auto rounded border border-border bg-surface-recessed px-2 py-1.5 font-mono text-xs leading-5 whitespace-pre">
+        {rawPatch}
+      </pre>
+      {onOpenFilePreview !== undefined ? (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-xs underline underline-offset-4 hover:underline"
+          onClick={onOpenFilePreview}
+        >
+          {openLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -1221,6 +1373,7 @@ export interface GitDiffCardBodyProps {
   state: GitDiffCardBodyState;
   diffViewOptions: Record<string, string | boolean | number>;
   svgDisplayMode: GitDiffCardSvgDisplayMode;
+  isBinary?: boolean;
   /**
    * Whether the surrounding card reserves a collapse-chevron gutter. The deleted
    * file message aligns to that gutter so its text lines up with the diff body.
@@ -1242,6 +1395,7 @@ export function GitDiffCardBody({
   state,
   diffViewOptions,
   svgDisplayMode,
+  isBinary,
   reservesCollapseGutter,
   onSelectionAddToChat,
 }: GitDiffCardBodyProps) {
@@ -1254,6 +1408,7 @@ export function GitDiffCardBody({
     isSvgPreviewCard,
     shouldGateDeletedDiff,
     shouldRenderDiffView,
+    shouldShowMetadataFallback,
     loadDeletedDiff,
   } = state;
   const fileDiffOptions = useMemo(
@@ -1300,6 +1455,12 @@ export function GitDiffCardBody({
           fileDiffLabel={fileDiffLabel}
           fileDiffOptions={fileDiffOptions}
           onSelectionAddToChat={onSelectionAddToChat}
+        />
+      ) : shouldShowMetadataFallback ? (
+        <GitDiffMetadataFallback
+          fileDiff={enrichedFileDiff}
+          changeKind={state.changeKind}
+          isBinary={isBinary}
         />
       ) : (
         <GitDiffCardRawDiffBody
