@@ -2772,6 +2772,7 @@ export function PromptBoxInternal({
       data-promptbox-compact={showCompactLayout ? "" : undefined}
       data-promptbox-zen={showZenLayout ? "" : undefined}
       data-promptbox-voice-active={showVoiceActionGroup ? "" : undefined}
+      data-promptbox-working={isRunning || isSubmitting ? "" : undefined}
       onSubmit={handleSubmit}
       onMouseDown={handlePromptBoxMouseDown}
       onDragOver={(event) => {
@@ -3176,6 +3177,7 @@ export function PromptBoxInternal({
           ) : null}
         </div>
       </div>
+      <span data-promptbox-beam-bloom="" aria-hidden="true" />
     </form>
   );
 }

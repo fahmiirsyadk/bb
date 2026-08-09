@@ -1,6 +1,51 @@
 @import "@fontsource-variable/inter";
 @import "@/components/ui/theme.css";
 
+/* Custom properties used by the direct CSS adaptation of BorderBeam's line
+ * preset. Browsers without @property still receive the explicit keyframe stops
+ * below; they just interpolate the beam in discrete steps. */
+@property --bb-prompt-beam-x {
+  syntax: "<number>";
+  initial-value: 0.06;
+  inherits: true;
+}
+
+@property --bb-prompt-beam-w {
+  syntax: "<number>";
+  initial-value: 0.5;
+  inherits: true;
+}
+
+@property --bb-prompt-beam-h {
+  syntax: "<number>";
+  initial-value: 0.8;
+  inherits: true;
+}
+
+@property --bb-prompt-beam-spike {
+  syntax: "<number>";
+  initial-value: 0.8;
+  inherits: true;
+}
+
+@property --bb-prompt-beam-spike-2 {
+  syntax: "<number>";
+  initial-value: 1.2;
+  inherits: true;
+}
+
+@property --bb-prompt-beam-edge {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
+@property --bb-prompt-beam-opacity {
+  syntax: "<number>";
+  initial-value: 0;
+  inherits: true;
+}
+
 @layer base {
   /*
    * Keep the real app shell from becoming a second scroll container. These
@@ -277,6 +322,435 @@
 
   [data-promptbox] {
     container: promptbox / inline-size;
+    --bb-prompt-beam-radius: 0.75rem;
+    --bb-prompt-beam-red: var(--destructive);
+    --bb-prompt-beam-blue: var(--timeline-accent);
+    --bb-prompt-beam-green: var(--success);
+    --bb-prompt-beam-purple: var(--pr-merged);
+    --bb-prompt-beam-gold: var(--attention);
+    --bb-prompt-beam-teal: var(--file-accent);
+    --bb-prompt-beam-highlight: color-mix(
+      in oklab,
+      var(--ink) 38%,
+      transparent
+    );
+  }
+
+  [data-promptbox][data-promptbox-voice-active] {
+    --bb-prompt-beam-radius: 1.5rem;
+  }
+
+  /*
+   * Directly adapted from BorderBeam's `size="line"` preset. The existing
+   * prompt form is the beam wrapper, so this keeps the effect local and avoids
+   * adding another component or changing the composer's layout.
+   */
+  [data-promptbox][data-promptbox-working] {
+    isolation: isolate;
+    animation:
+      bb-prompt-beam-travel 3.1s linear infinite,
+      bb-prompt-beam-edge-fade 3.1s linear infinite,
+      bb-prompt-beam-breathe 4s ease-in-out infinite,
+      bb-prompt-beam-spike 4.1s ease-in-out infinite,
+      bb-prompt-beam-spike-2 5.3s ease-in-out infinite,
+      bb-prompt-beam-fade-in 0.6s ease forwards;
+  }
+
+  [data-promptbox][data-promptbox-working]::after,
+  [data-promptbox][data-promptbox-working]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--bb-prompt-beam-radius);
+    pointer-events: none;
+  }
+
+  [data-promptbox][data-promptbox-working]::after {
+    padding: 1px;
+    clip-path: inset(0 round var(--bb-prompt-beam-radius));
+    background:
+      radial-gradient(
+        ellipse calc(36px * var(--bb-prompt-beam-w))
+          calc(36px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) calc(100% + 2px),
+        var(--bb-prompt-beam-red),
+        transparent 68%
+      ),
+      radial-gradient(
+        ellipse calc(30px * var(--bb-prompt-beam-w))
+          calc(32px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% + 39px) 100%,
+        var(--bb-prompt-beam-blue),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse calc(33px * var(--bb-prompt-beam-w))
+          calc(28px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% - 36px) calc(100% + 2px),
+        var(--bb-prompt-beam-green),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse calc(29px * var(--bb-prompt-beam-w))
+          calc(34px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% - 54px) 100%,
+        var(--bb-prompt-beam-purple),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse calc(27px * var(--bb-prompt-beam-w))
+          calc(30px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% + 51px) calc(100% - 1px),
+        var(--bb-prompt-beam-gold),
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse calc(24px * var(--bb-prompt-beam-w))
+          calc(28px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) calc(100% + 2px),
+        var(--bb-prompt-beam-highlight) 0%,
+        color-mix(in oklab, var(--bb-prompt-beam-highlight) 35%, transparent)
+          30%,
+        transparent 65%
+      );
+    -webkit-mask:
+      radial-gradient(
+        ellipse calc(78px * var(--bb-prompt-beam-w))
+          calc(60px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) 100%,
+        white 0%,
+        color-mix(in oklab, white 50%, transparent) 45%,
+        transparent 100%
+      ),
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: source-in, xor;
+    mask:
+      radial-gradient(
+        ellipse calc(78px * var(--bb-prompt-beam-w))
+          calc(60px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) 100%,
+        white 0%,
+        color-mix(in oklab, white 50%, transparent) 45%,
+        transparent 100%
+      ),
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: intersect, exclude;
+    z-index: 2;
+    opacity: calc(
+      var(--bb-prompt-beam-opacity) * var(--bb-prompt-beam-edge) *
+        var(--bb-prompt-beam-strength, 1)
+    );
+    animation: bb-prompt-beam-hue-shift 12s ease-in-out infinite;
+  }
+
+  [data-promptbox][data-promptbox-working]::before {
+    background:
+      radial-gradient(
+        ellipse calc(33px * var(--bb-prompt-beam-w))
+          calc(30px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) 100%,
+        color-mix(in oklab, var(--bb-prompt-beam-red) 48%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse calc(24px * var(--bb-prompt-beam-w))
+          calc(26px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% + 39px) calc(100% - 3px),
+        color-mix(in oklab, var(--bb-prompt-beam-blue) 42%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse calc(27px * var(--bb-prompt-beam-w))
+          calc(24px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% - 36px) 100%,
+        color-mix(in oklab, var(--bb-prompt-beam-green) 48%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse calc(23px * var(--bb-prompt-beam-w))
+          calc(28px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% - 54px) calc(100% - 2px),
+        color-mix(in oklab, var(--bb-prompt-beam-purple) 42%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse calc(24px * var(--bb-prompt-beam-w))
+          calc(24px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100% + 51px) calc(100% - 1px),
+        color-mix(in oklab, var(--bb-prompt-beam-gold) 50%, transparent),
+        transparent
+      );
+    box-shadow: inset 0 0 9px 1px
+      color-mix(in oklab, var(--ink) 10%, transparent);
+    -webkit-mask-image:
+      radial-gradient(
+        ellipse calc(78px * var(--bb-prompt-beam-w))
+          calc(60px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) 100%,
+        white 0%,
+        color-mix(in oklab, white 50%, transparent) 45%,
+        transparent 100%
+      ),
+      linear-gradient(
+        white,
+        transparent 28px,
+        transparent calc(100% - 28px),
+        white
+      ),
+      linear-gradient(
+        to right,
+        white,
+        transparent 28px,
+        transparent calc(100% - 28px),
+        white
+      );
+    -webkit-mask-composite: source-in, source-over;
+    mask-image:
+      radial-gradient(
+        ellipse calc(78px * var(--bb-prompt-beam-w))
+          calc(60px * var(--bb-prompt-beam-h)) at
+          calc(var(--bb-prompt-beam-x) * 100%) 100%,
+        white 0%,
+        color-mix(in oklab, white 50%, transparent) 45%,
+        transparent 100%
+      ),
+      linear-gradient(
+        white,
+        transparent 28px,
+        transparent calc(100% - 28px),
+        white
+      ),
+      linear-gradient(
+        to right,
+        white,
+        transparent 28px,
+        transparent calc(100% - 28px),
+        white
+      );
+    mask-composite: intersect, add;
+    z-index: 1;
+    opacity: calc(
+      var(--bb-prompt-beam-opacity) * var(--bb-prompt-beam-edge) * 0.7 *
+        var(--bb-prompt-beam-strength, 1)
+    );
+    animation: bb-prompt-beam-hue-shift 12s ease-in-out infinite;
+  }
+
+  [data-promptbox-beam-bloom] {
+    display: none;
+  }
+
+  [data-promptbox][data-promptbox-working] [data-promptbox-beam-bloom] {
+    display: block;
+    position: absolute;
+    inset: 0;
+    border-radius: calc(var(--bb-prompt-beam-radius) - 1px);
+    clip-path: inset(0 round var(--bb-prompt-beam-radius));
+    background:
+      radial-gradient(
+        ellipse calc(1px * var(--bb-prompt-beam-spike))
+          calc(92px * var(--bb-prompt-beam-h)) at 8% calc(100% - 2px),
+        var(--bb-prompt-beam-purple),
+        transparent 88%
+      ),
+      radial-gradient(
+        ellipse calc(10px * var(--bb-prompt-beam-spike-2))
+          calc(35px * var(--bb-prompt-beam-h)) at 22% calc(100% - 4px),
+        var(--bb-prompt-beam-teal),
+        transparent 95%
+      ),
+      radial-gradient(
+        ellipse calc(2px * (2 - var(--bb-prompt-beam-spike)))
+          calc(72px * var(--bb-prompt-beam-h)) at 36% calc(100% - 3px),
+        var(--bb-prompt-beam-red),
+        color-mix(in oklab, var(--bb-prompt-beam-red) 45%, transparent) 40%,
+        transparent 90%
+      ),
+      radial-gradient(
+        ellipse calc(14px * var(--bb-prompt-beam-spike-2))
+          calc(28px * var(--bb-prompt-beam-h)) at 50% calc(100% - 2px),
+        var(--bb-prompt-beam-gold),
+        color-mix(in oklab, var(--bb-prompt-beam-gold) 45%, transparent) 55%,
+        transparent 96%
+      ),
+      radial-gradient(
+        ellipse calc(1.2px * (2 - var(--bb-prompt-beam-spike-2)))
+          calc(85px * var(--bb-prompt-beam-h)) at 64% calc(100% - 4px),
+        var(--bb-prompt-beam-green),
+        color-mix(in oklab, var(--bb-prompt-beam-green) 45%, transparent) 35%,
+        transparent 89%
+      ),
+      radial-gradient(
+        ellipse calc(7px * var(--bb-prompt-beam-spike))
+          calc(45px * var(--bb-prompt-beam-h)) at 78% calc(100% - 2px),
+        var(--bb-prompt-beam-purple),
+        color-mix(in oklab, var(--bb-prompt-beam-purple) 45%, transparent) 48%,
+        transparent 94%
+      ),
+      radial-gradient(
+        ellipse calc(21px * var(--bb-prompt-beam-spike))
+          calc(15px * var(--bb-prompt-beam-spike-2)) at
+          calc(var(--bb-prompt-beam-x) * 100%) calc(100% + 1px),
+        var(--bb-prompt-beam-highlight) 0%,
+        color-mix(in oklab, var(--bb-prompt-beam-highlight) 50%, transparent)
+          50%,
+        transparent 100%
+      );
+    filter: blur(8px);
+    pointer-events: none;
+    z-index: 3;
+    opacity: calc(
+      var(--bb-prompt-beam-opacity) * var(--bb-prompt-beam-edge) * 0.8 *
+        var(--bb-prompt-beam-strength, 1)
+    );
+    animation: bb-prompt-beam-bloom-hue-shift 8s ease-in-out infinite;
+  }
+
+  @keyframes bb-prompt-beam-travel {
+    0% {
+      --bb-prompt-beam-x: 0.06;
+      --bb-prompt-beam-w: 0.5;
+    }
+    10% {
+      --bb-prompt-beam-x: 0.15;
+      --bb-prompt-beam-w: 0.8;
+    }
+    20% {
+      --bb-prompt-beam-x: 0.25;
+      --bb-prompt-beam-w: 1.1;
+    }
+    30% {
+      --bb-prompt-beam-x: 0.35;
+      --bb-prompt-beam-w: 1.3;
+    }
+    40% {
+      --bb-prompt-beam-x: 0.44;
+      --bb-prompt-beam-w: 1.45;
+    }
+    50% {
+      --bb-prompt-beam-x: 0.5;
+      --bb-prompt-beam-w: 1.5;
+    }
+    60% {
+      --bb-prompt-beam-x: 0.56;
+      --bb-prompt-beam-w: 1.45;
+    }
+    70% {
+      --bb-prompt-beam-x: 0.65;
+      --bb-prompt-beam-w: 1.3;
+    }
+    80% {
+      --bb-prompt-beam-x: 0.75;
+      --bb-prompt-beam-w: 1.1;
+    }
+    90% {
+      --bb-prompt-beam-x: 0.85;
+      --bb-prompt-beam-w: 0.8;
+    }
+    100% {
+      --bb-prompt-beam-x: 0.94;
+      --bb-prompt-beam-w: 0.5;
+    }
+  }
+
+  @keyframes bb-prompt-beam-edge-fade {
+    0%,
+    12.5% {
+      --bb-prompt-beam-edge: 0;
+    }
+    32.5%,
+    67.5% {
+      --bb-prompt-beam-edge: 1;
+    }
+    87.5%,
+    100% {
+      --bb-prompt-beam-edge: 0;
+    }
+  }
+
+  @keyframes bb-prompt-beam-breathe {
+    0%,
+    100% {
+      --bb-prompt-beam-h: 0.8;
+    }
+    25% {
+      --bb-prompt-beam-h: 1.25;
+    }
+    55% {
+      --bb-prompt-beam-h: 0.85;
+    }
+    80% {
+      --bb-prompt-beam-h: 1.3;
+    }
+  }
+
+  @keyframes bb-prompt-beam-spike {
+    0%,
+    100% {
+      --bb-prompt-beam-spike: 0.8;
+    }
+    25% {
+      --bb-prompt-beam-spike: 1.3;
+    }
+    50% {
+      --bb-prompt-beam-spike: 0.9;
+    }
+    75% {
+      --bb-prompt-beam-spike: 1.4;
+    }
+  }
+
+  @keyframes bb-prompt-beam-spike-2 {
+    0%,
+    100% {
+      --bb-prompt-beam-spike-2: 1.2;
+    }
+    25% {
+      --bb-prompt-beam-spike-2: 0.7;
+    }
+    50% {
+      --bb-prompt-beam-spike-2: 1.4;
+    }
+    75% {
+      --bb-prompt-beam-spike-2: 0.8;
+    }
+  }
+
+  @keyframes bb-prompt-beam-fade-in {
+    to {
+      --bb-prompt-beam-opacity: 1;
+    }
+  }
+
+  @keyframes bb-prompt-beam-hue-shift {
+    0%,
+    100% {
+      filter: hue-rotate(-10deg) brightness(1.05) saturate(1.1);
+    }
+    50% {
+      filter: hue-rotate(10deg) brightness(1.05) saturate(1.1);
+    }
+  }
+
+  @keyframes bb-prompt-beam-bloom-hue-shift {
+    0%,
+    100% {
+      filter: blur(8px) hue-rotate(-18deg) brightness(1.05) saturate(1.1);
+    }
+    50% {
+      filter: blur(8px) hue-rotate(18deg) brightness(1.05) saturate(1.1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-promptbox][data-promptbox-working],
+    [data-promptbox][data-promptbox-working]::after,
+    [data-promptbox][data-promptbox-working]::before,
+    [data-promptbox][data-promptbox-working] [data-promptbox-beam-bloom] {
+      animation: none !important;
+    }
   }
 
   [data-promptbox-shell] {

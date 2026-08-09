@@ -494,6 +494,34 @@ describe("suppressPromptEditorAnchorActivation", () => {
   });
 });
 
+describe("PromptBoxInternal working state", () => {
+  it("exposes the working state for the composer beam only while active", () => {
+    const props = createPromptBoxProps({
+      submission: { isRunning: true },
+    });
+    const view = render(<PromptBoxInternal {...props} />);
+    const form = view.container.querySelector("[data-promptbox]");
+
+    expect(form?.getAttribute("data-promptbox-working")).toBe("");
+
+    view.rerender(
+      <PromptBoxInternal
+        {...props}
+        submission={{ isRunning: false, isSubmitting: true }}
+      />,
+    );
+    expect(form?.getAttribute("data-promptbox-working")).toBe("");
+
+    view.rerender(
+      <PromptBoxInternal
+        {...props}
+        submission={{ isRunning: false, isSubmitting: false }}
+      />,
+    );
+    expect(form?.getAttribute("data-promptbox-working")).toBeNull();
+  });
+});
+
 describe("PromptBoxInternal controlled value sync", () => {
   it("suppresses and restores plugin customizations without remounting the editor", () => {
     setPluginSlotRegistrations(
