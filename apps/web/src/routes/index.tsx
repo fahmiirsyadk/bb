@@ -40,6 +40,7 @@ import {
   DownloadLink,
   EmailSignup,
   GitHubLink,
+  ProductHuntCallout,
 } from "../landing/cta";
 import { DASHBOARD_PATH } from "../lib/connect-return-to";
 import {
@@ -53,7 +54,14 @@ import {
   PiIcon,
 } from "../landing/icons";
 import type { CtaPlacement } from "../landing/site";
-import { CLI_COMMAND, SITE_DESCRIPTION, SITE_TITLE } from "../landing/site";
+import {
+  CLI_COMMAND,
+  OG_DESCRIPTION,
+  PRODUCT_HUNT_LAUNCH_ACTIVE,
+  SITE_DESCRIPTION,
+  SITE_TITLE,
+  unfurlMeta,
+} from "../landing/site";
 import interWoff2 from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url";
 import landingCss from "../landing/landing.css?url";
 
@@ -74,9 +82,9 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: SITE_TITLE },
       { name: "description", content: SITE_DESCRIPTION },
-      { property: "og:title", content: SITE_TITLE },
-      { property: "og:description", content: SITE_DESCRIPTION },
-      { property: "og:type", content: "website" },
+      // Unfurl title is just "bb": the card image already carries the
+      // tagline, and platforms print the title right next to the image.
+      ...unfurlMeta("bb", OG_DESCRIPTION, "/"),
       { name: "theme-color", content: "#ffffff" },
     ],
     links: [
@@ -1689,11 +1697,17 @@ function LandingPage() {
       </nav>
 
       <header className="hero">
-        <a className="updates-callout" href={LATEST_RELEASE_URL}>
-          <span className="updates-label">New</span>
-          <span className="updates-title">{LATEST_RELEASE_META.headline}</span>
-          <span aria-hidden="true">→</span>
-        </a>
+        {PRODUCT_HUNT_LAUNCH_ACTIVE ? (
+          <ProductHuntCallout placement="hero" />
+        ) : (
+          <a className="updates-callout" href={LATEST_RELEASE_URL}>
+            <span className="updates-label">New</span>
+            <span className="updates-title">
+              {LATEST_RELEASE_META.headline}
+            </span>
+            <ChevronRight className="updates-arrow" />
+          </a>
+        )}
         <h1>The IDE that builds itself</h1>
         <p className="sub">
           bb can control, customize, and automate itself, laying the groundwork

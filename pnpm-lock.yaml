@@ -678,6 +678,9 @@ importers:
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3
+      jiti:
+        specifier: ^2.6.1
+        version: 2.7.0
       mime-types:
         specifier: ^3.0.2
         version: 3.0.2

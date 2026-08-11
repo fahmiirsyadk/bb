@@ -478,6 +478,7 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
           status: "completed",
           conclusion: "success",
           url: null,
+          startedAt: "2026-06-16T12:25:00Z",
         },
       ],
       reviewDecision: "APPROVED",
@@ -489,6 +490,10 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
 };
 
 const SETTLED_RESPONSE_RESULT_FIXTURES: SettledResponseResultFixtures = {
+  "thread.rewind.discard": {},
+  "thread.rewind.prepare": {
+    providerThreadId: "provider-thread-rewind",
+  },
   "thread.start": {
     providerThreadId: "provider-thread-123",
   },
@@ -1056,11 +1061,12 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // Version 97 suppresses Codex raw response completion notifications. An
-  // older daemon emits them as provider/unhandled, so it must update before
-  // connecting.
-  it("uses protocol version 97 for Codex raw response completion noise", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(97);
+  // Version 104 makes terminal.close idempotent in the daemon. An enrolled
+  // daemon on an older build silently ignores a close for a terminal missing
+  // from its in-memory map, leaving the server row running and the panel tab
+  // impossible to close, so enrolled machines must update for the new behavior.
+  it("uses protocol version 104 for idempotent terminal closes", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(104);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {

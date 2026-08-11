@@ -49,6 +49,7 @@ import {
   type ClientConfig,
 } from "@bb/config/client-config";
 import {
+  validateInferenceFallbackModel,
   validateInferenceModel,
   validateTranscriptionModel,
 } from "@bb/config/inference-model";
@@ -107,6 +108,7 @@ const STARTUP_ONLY_MANAGED_ENV_KEYS = new Set<string>([
   "BB_EXTERNAL_URL",
   "BB_HOST_DAEMON_PORT",
   "BB_INFERENCE",
+  "BB_INFERENCE_FALLBACK",
   "BB_INHERITED_SKILLS_ROOTS",
   "BB_LOG_LEVEL",
   "BB_MANAGED_DEV_BUILTIN_PLUGIN_HOT_RELOAD",
@@ -1144,6 +1146,9 @@ function validateManagedConfigForWrite(config: ManagedConfigForWrite): void {
   if (configValues.BB_INFERENCE !== undefined) {
     validateInferenceModel(configValues.BB_INFERENCE);
   }
+  if (configValues.BB_INFERENCE_FALLBACK !== undefined) {
+    validateInferenceFallbackModel(configValues.BB_INFERENCE_FALLBACK);
+  }
   if (configValues.BB_TRANSCRIPTION !== undefined) {
     validateTranscriptionModel(configValues.BB_TRANSCRIPTION);
   }
@@ -1457,13 +1462,14 @@ Usage:
 Startup-only server and launcher keys:
   BB_APP_SURFACE, BB_APP_URL, BB_DATA_DIR, BB_DEV_APP_PORT,
   BB_EXTERNAL_URL, BB_HOST_DAEMON_PORT, BB_INFERENCE,
-  BB_INHERITED_SKILLS_ROOTS, BB_LOG_LEVEL,
+  BB_INFERENCE_FALLBACK, BB_INHERITED_SKILLS_ROOTS, BB_LOG_LEVEL,
   BB_MANAGED_DEV_BUILTIN_PLUGIN_HOT_RELOAD, BB_POSTHOG_API_KEY,
   BB_SERVER_BIND_HOST, BB_SERVER_PORT, BB_TELEMETRY, BB_TRANSCRIPTION,
   and BB_FF_* feature flags.
   Changes require a full bb-app restart with bb-app stop && bb-app start,
-  or a desktop app restart. BB_APP_URL, BB_INFERENCE, and BB_TRANSCRIPTION
-  can instead be changed live with bb-app config.
+  or a desktop app restart. BB_APP_URL, BB_INFERENCE,
+  BB_INFERENCE_FALLBACK, and BB_TRANSCRIPTION can instead be changed live
+  with bb-app config.
 
 Env file:
   ${formatBbAppEnvPath(dataDir)}
@@ -2416,6 +2422,18 @@ function createServerEnv(args: CreateServerEnvArgs): NodeJS.ProcessEnv {
     ...args.env,
     BB_APP_VERSION: args.context.appVersion,
     [APP_SURFACE_ENV_NAME]: APP_SURFACE_WEB,
+    // The daemon bundle holds the bb CLI. Server-side features that shell out
+    // — script automations put it on the script's PATH — otherwise have no way
+    // to find it: bb lives in the bundle directory, which is on no shell PATH.
+    // BB_CLI_DIR matches createDaemonEnv, which has always passed it through.
+    //
+    // BB_CLI is set rather than inherited on purpose. Launching bb-app from an
+    // agent shell brings that shell's BB_CLI along, pointing at whichever
+    // install spawned it. That binary can be older than this bundle and still
+    // answer `--version`, so an inherited value would quietly win over the
+    // bundle actually being run.
+    BB_CLI: join(args.context.daemonBundleDir, "bb"),
+    BB_CLI_DIR: args.context.daemonBundleDir,
     BB_DATA_DIR: args.context.dataDir,
     BB_HOST_DAEMON_PORT: String(args.context.daemonPort),
     BB_SERVER_PORT: String(args.context.serverPort),
