@@ -1,5 +1,4 @@
-import { useCallback, useEffect, type ReactNode } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useEffect, type ReactNode } from "react";
 import type { WorkspaceDiffTarget } from "@bb/domain";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
 import { Skeleton } from "@bb/shared-ui/skeleton";
@@ -28,7 +27,6 @@ import type { DiffFilePreviewRequest } from "./git-diff/diff-file-preview";
 import { clearDiffFileCardStates } from "./git-diff/diffFilesStore";
 import { buildGitDiffIdentity } from "./git-diff/gitDiffPanelHelpers";
 import { useDiffFileContentsRequester } from "./git-diff/useDiffFileContentsRequester";
-import { pendingGitDiffScrollPathAtom } from "./threadSecondaryPanelAtoms";
 import {
   SecondaryPanelFilePreview,
   ThreadStorageFilePreview,
@@ -47,10 +45,12 @@ export interface GitDiffTabContentProps {
   target: WorkspaceDiffTarget | undefined;
   isDiffPanelActive: boolean;
   gitDiffViewOptions: Record<string, string | boolean | number>;
+  onClearPendingGitDiffIntent?: () => void;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
   onOpenDiffFilePreview?: (request: DiffFilePreviewRequest) => void;
   onSelectionAddToChat?: (text: string) => void;
+  pendingGitDiffScrollPath?: string | null;
   workspaceRootPath?: string | null;
 }
 
@@ -147,10 +147,12 @@ export function GitDiffTabContent({
   target,
   isDiffPanelActive,
   gitDiffViewOptions,
+  onClearPendingGitDiffIntent,
   onOpenFileInEditor,
   onOpenFilePreview,
   onOpenDiffFilePreview,
   onSelectionAddToChat,
+  pendingGitDiffScrollPath,
   workspaceRootPath,
 }: GitDiffTabContentProps) {
   const isQueryEnabled =
@@ -180,16 +182,6 @@ export function GitDiffTabContent({
     target,
     mergeBaseRef,
   });
-
-  // A file opened from the info tab / prompt banner sets this path;
-  // useGitDiffPanelState resets the diff to all-changes so the file is in the
-  // slice, and the panel scrolls it into view, then clears the request here.
-  const pendingGitDiffScrollPath = useAtomValue(pendingGitDiffScrollPathAtom);
-  const setPendingGitDiffScrollPath = useSetAtom(pendingGitDiffScrollPathAtom);
-  const clearPendingGitDiffScrollPath = useCallback(
-    () => setPendingGitDiffScrollPath(null),
-    [setPendingGitDiffScrollPath],
-  );
 
   // Drop per-card UI state belonging to any other diff slice once a new target
   // / environment resolves, so collapse defaults are re-derived fresh rather
@@ -292,7 +284,7 @@ export function GitDiffTabContent({
       mergeBaseRef={mergeBaseRef}
       isPlaceholderData={isDiffFilesPlaceholder}
       scrollToPath={pendingGitDiffScrollPath}
-      onScrolledToPath={clearPendingGitDiffScrollPath}
+      onScrolledToPath={onClearPendingGitDiffIntent}
       onOpenFileInEditor={onOpenFileInEditor}
       onOpenFilePreview={onOpenFilePreview}
       onOpenDiffFilePreview={onOpenDiffFilePreview}
