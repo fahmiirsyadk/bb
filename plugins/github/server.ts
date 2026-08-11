@@ -347,6 +347,20 @@ interface CachedItem {
   updatedAt: string;
 }
 
+interface GhListEntry {
+  number?: unknown;
+  title?: unknown;
+  state?: unknown;
+  author?: { login?: unknown };
+  labels?: Array<{ name?: unknown }>;
+  assignees?: Array<{ login?: unknown }>;
+  url?: unknown;
+  body?: unknown;
+  updatedAt?: unknown;
+}
+
+type GhRunner = (args: string[]) => Promise<string>;
+
 interface ThreadLink {
   kind: "issue" | "pr";
   repo: string;
@@ -534,6 +548,73 @@ function parseGhLogin(stdout: string, stderr: string): string | null {
   const output = `${stdout}\n${stderr}`;
   const match = output.match(/\baccount\s+([A-Za-z0-9][A-Za-z0-9-]*)\b/i);
   return match?.[1] ?? null;
+}
+
+function toItems(raw: string, repo: string, kind: "issue" | "pr"): CachedItem[] {
+  const entries = JSON.parse(raw) as GhListEntry[];
+  return entries
+    .filter(
+      (entry): entry is GhListEntry & { number: number } =>
+        typeof entry?.number === "number",
+    )
+    .map((entry) => ({
+      repo,
+      number: entry.number,
+      kind,
+      title: String(entry.title ?? ""),
+      state: String(entry.state ?? "OPEN"),
+      author: String(entry.author?.login ?? ""),
+      labels: (entry.labels ?? []).map((label) => String(label?.name ?? "")),
+      assignees: (entry.assignees ?? []).map((user) => String(user?.login ?? "")),
+      url: String(entry.url ?? ""),
+      body: typeof entry.body === "string" ? entry.body : "",
+      updatedAt: String(entry.updatedAt ?? ""),
+    }));
+}
+
+// Open items plus a page of recently-closed ones, so the Closed filter has
+// something to show without a live gh call per view.
+export async function fetchRepoItems(
+  gh: GhRunner,
+  repo: string,
+): Promise<CachedItem[]> {
+  const fields = "number,title,state,author,labels,assignees,url,body,updatedAt";
+  // A repo with GitHub Issues disabled must not abort the whole sync —
+  // PRs still exist and should be cached.
+  const ghIssuesTolerant = (args: string[]) =>
+    gh(args).catch((error: unknown) => {
+      if (String(error).toLowerCase().includes("disabled issues")) return "[]";
+      throw error;
+    });
+  const [openIssues, closedIssues, openPrs, closedPrs] = await Promise.all([
+    ghIssuesTolerant([
+      "issue", "list", "-R", repo, "--state", "open",
+      "--limit", String(ISSUE_PAGE), "--json", fields,
+    ]),
+    ghIssuesTolerant([
+      "issue", "list", "-R", repo, "--state", "closed",
+      "--limit", String(CLOSED_ISSUE_PAGE), "--json", fields,
+    ]),
+    gh([
+      "pr", "list", "-R", repo, "--state", "open",
+      "--limit", String(PR_PAGE), "--json", fields,
+    ]),
+    gh([
+      "pr", "list", "-R", repo, "--state", "closed",
+      "--limit", String(CLOSED_PR_PAGE), "--json", fields,
+    ]),
+  ]);
+  const rows = [
+    ...toItems(openIssues, repo, "issue"),
+    ...toItems(closedIssues, repo, "issue"),
+    ...toItems(openPrs, repo, "pr"),
+    ...toItems(closedPrs, repo, "pr"),
+  ];
+  return [
+    ...new Map(
+      rows.map((item) => [`${item.kind}:${item.repo}#${item.number}`, item]),
+    ).values(),
+  ];
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -947,118 +1028,6 @@ export default async function plugin(bb: BbPluginApi) {
     );
   }
 
-  interface GhListEntry {
-    number?: unknown;
-    title?: unknown;
-    state?: unknown;
-    author?: { login?: unknown };
-    labels?: Array<{ name?: unknown }>;
-    assignees?: Array<{ login?: unknown }>;
-    url?: unknown;
-    body?: unknown;
-    updatedAt?: unknown;
-  }
-
-  function toItems(
-    raw: string,
-    repo: string,
-    kind: "issue" | "pr",
-  ): CachedItem[] {
-    const entries = JSON.parse(raw) as GhListEntry[];
-    return entries
-      .filter((entry) => typeof entry?.number === "number")
-      .map((entry) => ({
-        repo,
-        number: entry.number as number,
-        kind,
-        title: String(entry.title ?? ""),
-        state: String(entry.state ?? "OPEN"),
-        author: String(entry.author?.login ?? ""),
-        labels: (entry.labels ?? []).map((label) => String(label?.name ?? "")),
-        assignees: (entry.assignees ?? []).map((user) =>
-          String(user?.login ?? ""),
-        ),
-        url: String(entry.url ?? ""),
-        body: typeof entry.body === "string" ? entry.body : "",
-        updatedAt: String(entry.updatedAt ?? ""),
-      }));
-  }
-
-  // Open items plus a page of recently-closed ones, so the Closed filter has
-  // something to show without a live gh call per view.
-  async function syncRepo(repo: string): Promise<CachedItem[]> {
-    const fields =
-      "number,title,state,author,labels,assignees,url,body,updatedAt";
-    // A repo with GitHub Issues disabled must not abort the whole sync —
-    // PRs still exist and should be cached.
-    const ghIssuesTolerant = (args: string[]) =>
-      ghForRepo(repo, args).catch((error: unknown) => {
-        if (String(error).includes("disabled issues")) return "[]";
-        throw error;
-      });
-    const [openIssues, closedIssues, openPrs, closedPrs] = await Promise.all([
-      ghIssuesTolerant([
-        "issue",
-        "list",
-        "-R",
-        repo,
-        "--state",
-        "open",
-        "--limit",
-        String(ISSUE_PAGE),
-        "--json",
-        fields,
-      ]),
-      ghIssuesTolerant([
-        "issue",
-        "list",
-        "-R",
-        repo,
-        "--state",
-        "closed",
-        "--limit",
-        String(CLOSED_ISSUE_PAGE),
-        "--json",
-        fields,
-      ]),
-      ghForRepo(repo, [
-        "pr",
-        "list",
-        "-R",
-        repo,
-        "--state",
-        "open",
-        "--limit",
-        String(PR_PAGE),
-        "--json",
-        fields,
-      ]),
-      ghForRepo(repo, [
-        "pr",
-        "list",
-        "-R",
-        repo,
-        "--state",
-        "closed",
-        "--limit",
-        String(CLOSED_PR_PAGE),
-        "--json",
-        fields,
-      ]),
-    ]);
-    const rows = [
-      ...toItems(openIssues, repo, "issue"),
-      ...toItems(closedIssues, repo, "issue"),
-      ...toItems(openPrs, repo, "pr"),
-      ...toItems(closedPrs, repo, "pr"),
-    ];
-    return [
-      ...new Map(
-        rows.map((item) => [`${item.kind}:${item.repo}#${item.number}`, item]),
-      ).values(),
-    ];
-  }
-
   function replaceRepoRows(repo: string, items: CachedItem[]): void {
     cachedItems = [
       ...cachedItems.filter((item) => item.repo !== repo),
@@ -1102,7 +1071,10 @@ export default async function plugin(bb: BbPluginApi) {
     for (const { repo, hostId } of repos) {
       if (!readyHosts.has(hostId)) continue;
       try {
-        const items = await syncRepo(repo);
+        const items = await fetchRepoItems(
+          (args) => ghForRepo(repo, args),
+          repo,
+        );
         replaceRepoRows(repo, items);
         total += items.length;
       } catch (error) {
@@ -1822,7 +1794,13 @@ export default async function plugin(bb: BbPluginApi) {
       const match = stdout.trim().match(/\/issues\/(\d+)\s*$/);
       const number = match !== null ? Number(match[1]) : null;
       try {
-        replaceRepoRows(input.repo, await syncRepo(input.repo));
+        replaceRepoRows(
+          input.repo,
+          await fetchRepoItems(
+            (args) => ghForRepo(input.repo, args),
+            input.repo,
+          ),
+        );
         bb.realtime.publish("data-changed", {});
       } catch {
         // creation succeeded; the next scheduled sync will pick it up

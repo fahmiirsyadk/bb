@@ -68,7 +68,6 @@ import {
 import { fingerprintAcpLaunchSpec } from "./acp-launch-spec-fingerprint.js";
 
 interface ReconfigureThreadIfNeededArgs {
-  instructions: string | undefined;
   options: AgentRuntimeExecutionOptions;
   threadId: string;
 }
@@ -115,6 +114,12 @@ interface ArchiveOrUnarchiveThreadArgs {
   threadId: string;
 }
 
+interface CodexArchivedSessionRecoveryArgs {
+  providerId: string;
+  providerThreadId: string;
+  threadId: string;
+}
+
 interface AgentRuntimeInternalOptions extends AgentRuntimeOptions {
   adapterFactory?: ProviderAdapterFactory;
 }
@@ -149,6 +154,10 @@ interface ThreadRuntimeConfig {
   disallowedTools?: readonly string[];
   environmentId: string;
   instructionMode: InstructionMode;
+  /**
+   * The instructions the live provider session was constructed with. Frozen
+   * until the next session construction (start, resume, fork).
+   */
   instructions?: string;
   options: AgentRuntimeExecutionOptions;
   processKey: string;
@@ -193,6 +202,8 @@ const CODEX_ACCOUNT_RESTART_PROVIDER_ERROR_CATEGORIES =
   new Set<ProviderErrorCategory>(["rate-limit", "unauthorized"]);
 const CODEX_ACCOUNT_RESTART_PROVIDER_ERROR_TEXT_PATTERN =
   /\b(?:40[19]|429|auth(?:entication|orization)?|credits?|quota|rate[-\s]?limit(?:ed)?|unauthori[sz]ed|usage limit)\b/i;
+const CODEX_ARCHIVED_SESSION_ERROR_PATTERN =
+  /\b(?:session|thread)\s+\S+\s+is archived\b/i;
 
 function resolveThreadStoragePath(
   args: ResolveThreadStoragePathArgs,
@@ -334,20 +345,61 @@ function createAgentRuntimeInternal(
     });
   }
 
-  function sendCommand<TResult>(args: {
+  async function sendCommand<TResult>(args: {
     proc: ProviderProcess;
     message: SendJsonRpcRequestArgs<TResult>["message"];
     resultSchema: SendJsonRpcRequestArgs<TResult>["resultSchema"];
     timeoutMs?: number;
+    recovery?: CodexArchivedSessionRecoveryArgs;
   }): Promise<TResult> {
-    return sendJsonRpcRequest({
+    const request = {
       child: args.proc.child,
       getNextId: () => nextRequestId++,
       message: args.message,
       pending: args.proc.pending,
       resultSchema: args.resultSchema,
       ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
-    });
+    };
+
+    try {
+      return await sendJsonRpcRequest(request);
+    } catch (error) {
+      const recovery = args.recovery;
+      if (
+        !recovery ||
+        !isCodexArchivedSessionError(recovery.providerId, error)
+      ) {
+        throw error;
+      }
+
+      options.onStderr?.(
+        `Codex session "${recovery.providerThreadId}" is archived; unarchiving before retrying thread "${recovery.threadId}".`,
+      );
+      let retryProc: ProviderProcess;
+      try {
+        await archiveOrUnarchiveThread({
+          commandType: "thread/unarchive",
+          ...recovery,
+        });
+        // Unarchiving can replace an exited provider process, so resolve the
+        // process again instead of writing to the captured child's stdin.
+        retryProc = requireProviderProcess({
+          processKey: args.proc.processKey,
+          providerId: args.proc.providerId,
+        });
+      } catch (recoveryError) {
+        // The archived-session error names the session and the CLI command
+        // that fixes it, so keep it as the reported failure whenever the
+        // recovery itself could not run.
+        throw new Error(error.message, { cause: recoveryError });
+      }
+
+      return sendJsonRpcRequest({
+        ...request,
+        child: retryProc.child,
+        pending: retryProc.pending,
+      });
+    }
   }
 
   function resolveProviderForThread(threadId: string): string {
@@ -741,6 +793,17 @@ function createAgentRuntimeInternal(
     await shutdownThreadScopedCodexProcessIfIdle(proc);
   }
 
+  function isCodexArchivedSessionError(
+    providerId: string,
+    error: unknown,
+  ): error is Error {
+    return (
+      providerId === CODEX_PROVIDER_ID &&
+      error instanceof Error &&
+      CODEX_ARCHIVED_SESSION_ERROR_PATTERN.test(error.message)
+    );
+  }
+
   async function reconfigureThreadIfNeeded(
     args: ReconfigureThreadIfNeededArgs,
   ): Promise<void> {
@@ -750,14 +813,17 @@ function createAgentRuntimeInternal(
     }
 
     const nextOptions = args.options;
-    const nextInstructions = args.instructions ?? currentConfig.instructions;
 
+    // Instructions are frozen for the life of a provider session: drifted
+    // instructions (memory catalog, AGENTS.md edits, plugin dynamic
+    // instructions) must never force a thread/resume, because a resume can
+    // replace the live CLI session and kill its running background tasks.
+    // Fresh instructions apply when the next session is constructed.
     if (
       sameExecutionSettings({
         left: currentConfig.options,
         right: nextOptions,
-      }) &&
-      currentConfig.instructions === nextInstructions
+      })
     ) {
       return;
     }
@@ -786,7 +852,7 @@ function createAgentRuntimeInternal(
       options: toProviderExecutionContext({
         envVars,
         execOpts: nextOptions,
-        instructions: nextInstructions,
+        instructions: currentConfig.instructions,
         skillRoots: providerSkillRoots,
       }),
       dynamicTools: currentConfig.dynamicTools,
@@ -799,6 +865,11 @@ function createAgentRuntimeInternal(
         proc,
         message: plan,
         resultSchema: threadIdentityResultSchema,
+        recovery: {
+          providerId: currentConfig.providerId,
+          providerThreadId: adapterCommand.providerThreadId,
+          threadId: args.threadId,
+        },
       });
       const providerThreadId = resolveThreadIdentityResult({
         result,
@@ -817,7 +888,6 @@ function createAgentRuntimeInternal(
 
     setThreadRuntimeConfig(args.threadId, {
       ...currentConfig,
-      instructions: nextInstructions,
       options: nextOptions,
     });
   }
@@ -1109,6 +1179,17 @@ function createAgentRuntimeInternal(
             message: cmd,
             resultSchema: threadIdentityResultSchema,
             timeoutMs: THREAD_CREATION_REQUEST_TIMEOUT_MS,
+            // A fork reads the source session, so an archived source fails the
+            // same way a resume does. A plain start has no session to unarchive.
+            ...(fork
+              ? {
+                  recovery: {
+                    providerId,
+                    providerThreadId: fork.sourceProviderThreadId,
+                    threadId,
+                  },
+                }
+              : {}),
           });
           const providerThreadId = resolveThreadIdentityResult({
             result,
@@ -1260,6 +1341,11 @@ function createAgentRuntimeInternal(
             proc,
             message: cmd,
             resultSchema: threadIdentityResultSchema,
+            recovery: {
+              providerId,
+              providerThreadId: adapterCommand.providerThreadId,
+              threadId,
+            },
           });
           const resolvedId =
             resolveThreadIdentityResult({ result, threadId }) ??
@@ -1310,7 +1396,6 @@ function createAgentRuntimeInternal(
           await reconfigureThreadIfNeeded({
             threadId,
             options: execOpts,
-            instructions,
           });
 
           const adapterCommand: AdapterCommand = {
@@ -1340,6 +1425,11 @@ function createAgentRuntimeInternal(
               proc,
               message: cmd,
               resultSchema: ignoredJsonRpcResultSchema,
+              recovery: {
+                providerId: pid,
+                providerThreadId: adapterCommand.providerThreadId,
+                threadId,
+              },
             });
           } catch (error) {
             pendingTurnStartThreadIds.delete(threadId);
@@ -1395,7 +1485,6 @@ function createAgentRuntimeInternal(
           await reconfigureThreadIfNeeded({
             threadId,
             options: execOpts,
-            instructions,
           });
 
           const adapterCommand: AdapterCommand = {
@@ -1421,6 +1510,11 @@ function createAgentRuntimeInternal(
             proc,
             message: cmd,
             resultSchema: ignoredJsonRpcResultSchema,
+            recovery: {
+              providerId: pid,
+              providerThreadId: adapterCommand.providerThreadId,
+              threadId,
+            },
           });
           emitAcceptedCommandEvents({
             command: adapterCommand,

@@ -592,9 +592,11 @@ describe("codex provider adapter", () => {
         approvalsReviewer: "user",
         sandbox: "danger-full-access",
         cwd: "/tmp/worktree",
+        ephemeral: false,
         experimentalRawEvents: true,
       },
     });
+    expect(JSON.stringify(cmd)).not.toContain("persistExtendedHistory");
     expect(JSON.stringify(cmd)).not.toContain("baseInstructions");
     expect(JSON.stringify(cmd)).not.toContain("developerInstructions");
   });
@@ -1756,6 +1758,7 @@ describe("codex provider adapter", () => {
         ],
       },
     });
+    expect(JSON.stringify(cmd)).not.toContain("persistExtendedHistory");
   });
 
   it("buildCommand maps max reasoning level through to Codex", () => {
@@ -1871,6 +1874,7 @@ describe("codex provider adapter", () => {
         cwd: "/tmp/worktree",
       },
     });
+    expect(JSON.stringify(cmd)).not.toContain("persistExtendedHistory");
     expect(JSON.stringify(cmd)).not.toContain("baseInstructions");
     expect(JSON.stringify(cmd)).not.toContain("developerInstructions");
   });
@@ -2681,6 +2685,29 @@ describe("codex provider adapter", () => {
           generation: {},
           tool_call: {},
           tool_response: {},
+        },
+      },
+    });
+
+    expect(events).toEqual([]);
+  });
+
+  it("translateEvent ignores Codex raw response completions", () => {
+    const adapter = createCodexProviderAdapter();
+    const events = adapter.translateEvent({
+      jsonrpc: "2.0",
+      method: "rawResponse/completed",
+      params: {
+        threadId: "t1",
+        turnId: "turn-1",
+        responseId: "response-1",
+        usage: {
+          totalTokens: 19_206,
+          inputTokens: 18_971,
+          cachedInputTokens: 11_008,
+          cacheWriteInputTokens: 0,
+          outputTokens: 235,
+          reasoningOutputTokens: 53,
         },
       },
     });

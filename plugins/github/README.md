@@ -111,8 +111,8 @@ enrolled BB machine.
 
 ## Development
 
-```
-npm install <bb-checkout>/packages/plugin-sdk   # types (not on npm)
-npx tsc --noEmit
-bb plugin dev
+Run the checks from the repository root:
+
+```sh
+pnpm exec turbo run typecheck test --filter=bb-plugin-github
 ```

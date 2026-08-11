@@ -213,7 +213,7 @@ export function resolveSecondaryPanelHideControl() {
 export interface ThreadSecondaryPanelProps {
   activeTab: SecondaryFixedPanelTab | null;
   canUseGitUi: boolean;
-  defaultMergeBaseBranch?: string;
+  requestedMergeBaseBranch?: string;
   environmentId?: string;
   metadataContent: ReactNode;
   fileTabs?: SecondaryPanelFileTab[];
@@ -270,7 +270,10 @@ export interface ThreadSecondaryPanelProps {
   onPanelChange: (panel: ThreadSecondaryPanelTab) => void;
   onCollapse: () => void;
   onClose: () => void;
+  onClearPendingGitDiffIntent?: () => void;
   onOpenNewTab: () => void;
+  pendingGitDiffCommitSha?: string | null;
+  pendingGitDiffScrollPath?: string | null;
   workspaceRootPath?: string | null;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
@@ -324,7 +327,7 @@ function resolveActiveFixedPanel({
 export function ThreadSecondaryPanel({
   activeTab,
   canUseGitUi,
-  defaultMergeBaseBranch,
+  requestedMergeBaseBranch,
   environmentId,
   metadataContent,
   fileTabs,
@@ -345,7 +348,10 @@ export function ThreadSecondaryPanel({
   onPanelChange,
   onCollapse,
   onClose,
+  onClearPendingGitDiffIntent,
   onOpenNewTab,
+  pendingGitDiffCommitSha,
+  pendingGitDiffScrollPath,
   workspaceRootPath,
   onOpenFileInEditor,
   onOpenFilePreview,
@@ -468,7 +474,10 @@ export function ThreadSecondaryPanel({
   } = useGitDiffPanelState({
     environmentId,
     isDiffPanelActive,
-    defaultMergeBaseBranch,
+    requestedMergeBaseBranch,
+    onClearPendingGitDiffIntent,
+    pendingGitDiffCommitSha,
+    pendingGitDiffScrollPath,
   });
   // Share the diff tab's table of contents with the body: React Query dedupes
   // this against GitDiffTabContent's own fetch (same key), so the toolbar reads
@@ -820,10 +829,12 @@ export function ThreadSecondaryPanel({
             target={gitDiffTarget}
             isDiffPanelActive={isDiffPanelActive}
             gitDiffViewOptions={gitDiffViewOptions}
+            onClearPendingGitDiffIntent={onClearPendingGitDiffIntent}
             onOpenFileInEditor={onOpenFileInEditor}
             onOpenFilePreview={onOpenFilePreview}
             onOpenDiffFilePreview={onOpenDiffFilePreview}
             onSelectionAddToChat={onSelectionAddToChat}
+            pendingGitDiffScrollPath={pendingGitDiffScrollPath}
             workspaceRootPath={workspaceRootPath}
           />
         ) : (

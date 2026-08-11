@@ -20,6 +20,7 @@ import {
   clientTurnRequestIdSchema,
   gitBranchNameSchema,
   jsonObjectSchema,
+  providerNativeSkillRootsSchema,
   BRANCH_LIST_LIMIT_MAX,
   BRANCH_LIST_QUERY_MAX_LENGTH,
   FILE_LIST_LIMIT_MAX,
@@ -35,7 +36,7 @@ import {
   providerCliStatusResponseSchema,
 } from "./local.js";
 
-export const HOST_DAEMON_PROTOCOL_VERSION = 88 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 97 as const;
 export const PLUGIN_COMMAND_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
 
 export {
@@ -141,6 +142,14 @@ export const hostDaemonInjectedSkillSourceSchema = z.discriminatedUnion(
         skillFilePath: z.string().min(1),
       })
       .strict(),
+    hostDaemonInjectedSkillSourceBaseSchema
+      .extend({
+        kind: z.literal("host-path"),
+        sourceType: z.enum(["shared-user", "shared-project"]),
+        sourceRootPath: z.string().min(1),
+        skillFilePath: z.string().min(1),
+      })
+      .strict(),
   ],
 );
 export type HostDaemonInjectedSkillSource = z.infer<
@@ -167,6 +176,7 @@ export const hostDaemonAcpLaunchSpecSchema = z
       .optional(),
     reasoningCli: acpReasoningCliSchema.optional(),
     nativeReasoning: acpNativeReasoningSchema.optional(),
+    nativeSkillRoots: providerNativeSkillRootsSchema.optional(),
     permissionCli: acpPermissionCliSchema.optional(),
   })
   .strict();
@@ -186,6 +196,7 @@ export function normalizeHostDaemonAcpLaunchSpec(
     modelCli,
     reasoningCli,
     nativeReasoning,
+    nativeSkillRoots,
     permissionCli,
   } = spec;
   const permissionCliHasMode =
@@ -203,6 +214,7 @@ export function normalizeHostDaemonAcpLaunchSpec(
       : {}),
     ...(reasoningCli !== undefined ? { reasoningCli } : {}),
     ...(nativeReasoning !== undefined ? { nativeReasoning } : {}),
+    ...(nativeSkillRoots !== undefined ? { nativeSkillRoots } : {}),
     ...(permissionCli !== undefined && permissionCliHasMode
       ? { permissionCli }
       : {}),
@@ -714,6 +726,7 @@ const hostListCommandsCommandSchema = z
     type: z.literal("host.list_commands"),
     providerId: z.string().min(1),
     cwd: z.string().min(1).nullable(),
+    nativeSkillRoots: providerNativeSkillRootsSchema.optional(),
   })
   .strict();
 
@@ -730,6 +743,8 @@ export const skillRootKindSchema = z.enum([
   "bb-builtin",
   "provider-project",
   "provider-user",
+  "shared-project",
+  "shared-user",
   "plugin",
 ]);
 export type SkillRootKind = z.infer<typeof skillRootKindSchema>;
@@ -756,11 +771,14 @@ export type DiscoveredSkill = z.infer<typeof discoveredSkillSchema>;
  * originating root. Same root-resolution rules as `host.list_commands`:
  * `cwd: null` skips the project roots and returns only user-home/bb scopes.
  */
-const hostListSkillsCommandSchema = z.object({
-  type: z.literal("host.list_skills"),
-  providerId: z.string().min(1),
-  cwd: z.string().min(1).nullable(),
-});
+const hostListSkillsCommandSchema = z
+  .object({
+    type: z.literal("host.list_skills"),
+    providerId: z.string().min(1),
+    cwd: z.string().min(1).nullable(),
+    nativeSkillRoots: providerNativeSkillRootsSchema.optional(),
+  })
+  .strict();
 
 /** User-owned local skill scopes that can be deleted after path confinement. */
 export const deletableSkillScopeSchema = z.enum([
@@ -770,6 +788,8 @@ export const deletableSkillScopeSchema = z.enum([
   "claude-project",
   "codex-user",
   "codex-project",
+  "cursor-user",
+  "cursor-project",
 ]);
 export type DeletableSkillScope = z.infer<typeof deletableSkillScopeSchema>;
 

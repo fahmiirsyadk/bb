@@ -13,6 +13,7 @@ import path from "node:path";
 import { getBuiltInAgentProviderInfo } from "@bb/agent-providers";
 import {
   getThreadEventScopeTurnId,
+  isStandaloneBuiltinCompactCommand,
   jsonValueSchema,
   requireThreadEventScopeTurnId,
   turnScope,
@@ -21,7 +22,6 @@ import type {
   ClientTurnRequestId,
   PermissionEscalation,
   PromptInput,
-  PromptTextMention,
   ReasoningLevel,
   ServiceTier,
   ThreadEvent,
@@ -99,11 +99,6 @@ interface CodexThreadPermissionSettings {
 
 type BbThreadStartParams = ThreadStartParams & {
   experimentalRawEvents?: boolean;
-  persistExtendedHistory?: boolean;
-};
-
-type BbThreadResumeParams = ThreadResumeParams & {
-  persistExtendedHistory?: boolean;
 };
 
 type BbThreadForkParams = {
@@ -118,7 +113,6 @@ type BbThreadForkParams = {
   baseInstructions?: string | null;
   developerInstructions?: string | null;
   dynamicTools?: DynamicToolSpec[];
-  persistExtendedHistory?: boolean;
 };
 
 interface ToCodexPermissionSettingsArgs {
@@ -700,64 +694,6 @@ function toCodexUserInput(input: PromptInput[]): CodexUserInput[] {
         };
     }
   });
-}
-
-type TextPromptInput = Extract<PromptInput, { type: "text" }>;
-
-function isBuiltinCompactCommandMention(mention: PromptTextMention): boolean {
-  const resource = mention.resource;
-  return (
-    resource.kind === "command" &&
-    resource.trigger === "/" &&
-    resource.name === "compact" &&
-    resource.source === "command" &&
-    resource.origin === "builtin"
-  );
-}
-
-function stripBuiltinCompactCommandMentions(input: TextPromptInput): {
-  mentionCount: number;
-  text: string;
-} {
-  const ranges = input.mentions
-    .filter(isBuiltinCompactCommandMention)
-    .map((mention) => ({
-      start: mention.start,
-      end:
-        mention.end < input.text.length && input.text[mention.end] === " "
-          ? mention.end + 1
-          : mention.end,
-    }))
-    .sort((left, right) => left.start - right.start || left.end - right.end);
-
-  if (ranges.length === 0) {
-    return { mentionCount: 0, text: input.text };
-  }
-
-  let text = "";
-  let cursor = 0;
-  for (const range of ranges) {
-    text += input.text.slice(cursor, range.start);
-    cursor = range.end;
-  }
-  text += input.text.slice(cursor);
-
-  return { mentionCount: ranges.length, text };
-}
-
-function isStandaloneBuiltinCompactCommandInput(input: PromptInput[]): boolean {
-  let mentionCount = 0;
-  for (const chunk of input) {
-    if (chunk.type !== "text") {
-      return false;
-    }
-    const stripped = stripBuiltinCompactCommandMentions(chunk);
-    mentionCount += stripped.mentionCount;
-    if (stripped.text.trim() !== "") {
-      return false;
-    }
-  }
-  return mentionCount === 1;
 }
 
 function buildCodexConfig(
@@ -1924,10 +1860,14 @@ export function createCodexProviderAdapter(
             ...resolveCodexInstructionOverrides(command),
             model: command.options?.model ?? undefined,
             serviceTier: toCodexServiceTier(command.options?.serviceTier),
+            // bb reaps idle thread-scoped Codex processes and later resumes by
+            // provider thread id, so the rollout must exist on disk. Codex
+            // already defaults to non-ephemeral; pin the value so a future
+            // default flip cannot silently break resume.
+            ephemeral: false,
             config: preparedGitRoots.config ?? undefined,
             // Codex only exposes raw Responses items as a thread/start opt-in.
             experimentalRawEvents: true,
-            persistExtendedHistory: false,
             ...(dynamicTools && dynamicTools.length > 0
               ? { dynamicTools }
               : {}),
@@ -1941,7 +1881,7 @@ export function createCodexProviderAdapter(
         case "thread/resume": {
           const dynamicTools = toCodexDynamicTools(command.dynamicTools);
           const preparedGitRoots = prepareWorkspaceWriteGitRoots({ command });
-          const params: BbThreadResumeParams = {
+          const params: ThreadResumeParams = {
             threadId: command.providerThreadId,
             approvalPolicy: preparedGitRoots.permissionSettings.approvalPolicy,
             approvalsReviewer:
@@ -1952,7 +1892,6 @@ export function createCodexProviderAdapter(
             model: command.options?.model ?? undefined,
             serviceTier: toCodexServiceTier(command.options?.serviceTier),
             config: preparedGitRoots.config ?? undefined,
-            persistExtendedHistory: false,
             ...(dynamicTools && dynamicTools.length > 0
               ? { dynamicTools }
               : {}),
@@ -1977,7 +1916,6 @@ export function createCodexProviderAdapter(
             model: command.options?.model ?? undefined,
             serviceTier: toCodexServiceTier(command.options?.serviceTier),
             config: preparedGitRoots.config ?? undefined,
-            persistExtendedHistory: false,
             ...(dynamicTools && dynamicTools.length > 0
               ? { dynamicTools }
               : {}),
@@ -1993,7 +1931,7 @@ export function createCodexProviderAdapter(
             command.input,
             command.inputGroups,
           );
-          if (isStandaloneBuiltinCompactCommandInput(input)) {
+          if (isStandaloneBuiltinCompactCommand(input)) {
             const params: ThreadCompactStartParams = {
               threadId: command.providerThreadId,
             };
