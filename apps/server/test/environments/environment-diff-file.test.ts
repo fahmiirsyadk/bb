@@ -129,4 +129,59 @@ describe("environment diff file route", () => {
       expect(requests).toEqual([]);
     });
   });
+
+  it.each([
+    {
+      errorCode: "invalid_path",
+      errorMessage: "Path is a directory, not a file",
+      expectedStatus: 400,
+    },
+    {
+      errorCode: "ENOENT",
+      errorMessage: "Path does not exist",
+      expectedStatus: 404,
+    },
+    {
+      errorCode: "file_too_large",
+      errorMessage: "File exceeds limit",
+      expectedStatus: 413,
+    },
+  ])(
+    "maps relative file $errorCode errors to user-facing responses",
+    async ({ errorCode, errorMessage, expectedStatus }) => {
+      await withTestHarness(async (harness) => {
+        const { host, session } = seedHostSession(harness.deps);
+        const { project } = seedProjectWithSource(harness.deps, {
+          hostId: host.id,
+        });
+        const environment = seedEnvironment(harness.deps, {
+          hostId: host.id,
+          projectId: project.id,
+        });
+        const requests: HostDaemonOnlineRpcRequestMessage[] = [];
+        registerHostRpcResponder(harness, {
+          hostId: host.id,
+          sessionId: session.id,
+          handle: (request) => {
+            requests.push(request);
+            return { ok: false, errorCode, errorMessage };
+          },
+        });
+
+        const response = await harness.app.request(
+          `/api/v1/environments/${environment.id}/diff/file?target=uncommitted&path=src%2Fmain.ts&side=new`,
+        );
+
+        expect(response.status, await response.clone().text()).toBe(
+          expectedStatus,
+        );
+        await expect(response.json()).resolves.toEqual({
+          code: errorCode,
+          message: errorMessage,
+          retryable: false,
+        });
+        expect(requests[0]?.command.type).toBe("host.read_file_relative");
+      });
+    },
+  );
 });

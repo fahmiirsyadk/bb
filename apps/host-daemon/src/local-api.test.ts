@@ -49,6 +49,14 @@ describe("local API server", () => {
 
     const statusResponse = await client.status.$get();
 
+    const corsResponse = await fetch(
+      `http://localhost:${server.port}/status`,
+      { headers: { Origin: "http://server.test" } },
+    );
+    expect(corsResponse.headers.get("access-control-allow-origin")).toBe(
+      "http://server.test",
+    );
+
     expect(await statusResponse.json()).toEqual({
       hostId: "host-1",
       connected: true,

@@ -207,7 +207,13 @@ export async function startLocalApiServer(
     target: originArgs,
     value: options.devAppPort,
   });
-  const allowedCorsOrigins = new Set<string>(buildLocalAppOrigins(originArgs));
+  // In a colocated deployment the app is commonly served from the same
+  // origin as the configured server URL. `BB_APP_URL` is optional, so include
+  // the server origin as a safe default for remote app shells as well.
+  const allowedCorsOrigins = new Set<string>([
+    ...buildLocalAppOrigins(originArgs),
+    new URL(options.serverUrl).origin,
+  ]);
   app.use(
     "*",
     cors({

@@ -30,6 +30,7 @@ import {
 } from "../services/lib/entity-lookup.js";
 import { runLiveCommandAndWait } from "../services/hosts/live-command-wait.js";
 import { callHostRetryableOnlineRpc } from "../services/hosts/online-rpc.js";
+import { remapDaemonFileRouteError } from "../services/hosts/daemon-file-response.js";
 import { generateCommitMessage } from "../services/ai/commit-message.js";
 import { archiveEnvironmentThreads } from "../services/threads/thread-archive.js";
 import {
@@ -545,32 +546,36 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
       throw new ApiError(400, "invalid_request", "Invalid path");
     }
     const ref = resolveDiffFileRef(query);
-    const result = await callHostRetryableOnlineRpc(deps, {
-      hostId: environment.hostId,
-      timeoutMs: COMMAND_TIMEOUT_MS,
-      command: {
-        ...(ref === undefined
-          ? {
-              type: "host.read_file_relative" as const,
-              rootPath: environment.path,
-              path: repoRelativePath,
-              dotfiles: "allow" as const,
-            }
-          : {
-              type: "host.read_file" as const,
-              path: joinHostPath(environment.path, repoRelativePath),
-              rootPath: environment.path,
-              ref,
-            }),
-      },
-    });
-    return context.json({
-      path: result.path,
-      content: result.content,
-      contentEncoding: result.contentEncoding,
-      ...(result.mimeType ? { mimeType: result.mimeType } : {}),
-      sizeBytes: result.sizeBytes,
-    });
+    try {
+      const result = await callHostRetryableOnlineRpc(deps, {
+        hostId: environment.hostId,
+        timeoutMs: COMMAND_TIMEOUT_MS,
+        command: {
+          ...(ref === undefined
+            ? {
+                type: "host.read_file_relative" as const,
+                rootPath: environment.path,
+                path: repoRelativePath,
+                dotfiles: "allow" as const,
+              }
+            : {
+                type: "host.read_file" as const,
+                path: joinHostPath(environment.path, repoRelativePath),
+                rootPath: environment.path,
+                ref,
+              }),
+        },
+      });
+      return context.json({
+        path: result.path,
+        content: result.content,
+        contentEncoding: result.contentEncoding,
+        ...(result.mimeType ? { mimeType: result.mimeType } : {}),
+        sizeBytes: result.sizeBytes,
+      });
+    } catch (error) {
+      return remapDaemonFileRouteError(error);
+    }
   });
 
   get(routes.diffBranches, async (context, query) => {

@@ -6,6 +6,7 @@ import {
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
 import { HttpError } from "@/lib/api";
 import { buildThreadStorageRawContentUrl } from "@/lib/file-content-urls";
+import { BbHttpError } from "@/lib/sdk";
 import type {
   FilePreview,
   FilePreviewLineRange,
@@ -114,7 +115,9 @@ export function SecondaryPanelFilePreview({
   statusLabel = null,
 }: SecondaryPanelFilePreviewProps) {
   if (error) {
-    const isNotFound = error instanceof HttpError && error.status === 404;
+    const isNotFound =
+      (error instanceof HttpError && error.status === 404) ||
+      (error instanceof BbHttpError && error.status === 404);
     return (
       <FilePreviewSurface
         path={activePath}
@@ -124,7 +127,10 @@ export function SecondaryPanelFilePreview({
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
         statusLabel={statusLabel}
-        state={{ kind: isNotFound ? "not-found" : "error" }}
+        state={{
+          kind: isNotFound ? "not-found" : "error",
+          ...(isNotFound ? {} : { message: error.message }),
+        }}
       />
     );
   }
