@@ -2,19 +2,18 @@
   "name": "@bb/desktop",
   "version": "0.37.0",
   "private": true,
-  "description": "macOS Electron shell for bb",
+  "description": "Cross-platform Electron shell for bb",
+  "author": "bb contributors <bb@getbb.app>",
+  "homepage": "https://getbb.app",
   "main": "dist/main.js",
-  "os": [
-    "darwin"
-  ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "clean": "rimraf dist release",
-    "desktop:build": "pnpm run build && node scripts/run-electron-builder.mjs --mac --arm64 --publish always",
+    "desktop:build": "pnpm run build && node scripts/run-electron-builder.mjs --publish always",
     "desktop:version-feed": "tsx scripts/generate-version-feed.mts",
     "dev": "pnpm run prepare-runtime && pnpm run build && node --conditions=source --import tsx scripts/run-electron-dev.mjs",
     "dist": "pnpm run prepare-runtime && pnpm run desktop:build",
-    "package": "pnpm run prepare-runtime && pnpm run build && node scripts/run-electron-builder.mjs --mac --dir --arm64",
+    "package": "pnpm run prepare-runtime && pnpm run build && node scripts/run-electron-builder.mjs --dir",
     "prepare-runtime": "pnpm exec turbo run build --filter=bb-app --output-logs=new-only",
     "smoke:packaged": "node scripts/smoke-packaged-app.mjs",
     "start": "pnpm run package && node scripts/run-packaged-app.mjs",
@@ -27,6 +26,14 @@
     "electron-updater": "^6.8.3",
     "semver": "^7.7.0",
     "zod": "^4.3.6"
+  },
+  "optionalDependencies": {
+    "@parcel/watcher-darwin-arm64": "2.5.6",
+    "@parcel/watcher-darwin-x64": "2.5.6",
+    "@parcel/watcher-linux-arm64-glibc": "2.5.6",
+    "@parcel/watcher-linux-arm64-musl": "2.5.6",
+    "@parcel/watcher-linux-x64-glibc": "2.5.6",
+    "@parcel/watcher-linux-x64-musl": "2.5.6"
   },
   "devDependencies": {
     "@bb/config": "workspace:*",

@@ -57,7 +57,7 @@ const electronMock = vi.hoisted(() => {
     lastCheckedAt: null,
     latestVersion: null,
     pendingVersion: null,
-    platform: "macos",
+    platform: process.platform === "linux" ? "linux" : "macos",
     updateAvailable: false,
     updateDownloaded: false,
     version: "0.0.0-test",

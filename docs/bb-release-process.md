@@ -15,6 +15,15 @@ npm does not publish the desktop app. Because the versions are locked together,
 a normal release must run both. Do not consider a release complete until the
 desktop app is published at the same version (see "Publish The Desktop App").
 
+The desktop packaging matrix is macOS arm64 `.dmg`/`.zip` and Linux x64
+AppImage/`.deb`. Linux arm64 is not an installer target, and `.rpm` is not
+configured. The manually dispatched desktop workflow runs both macOS arm64 and
+Ubuntu Linux x64 jobs. The Linux job packages and smoke-tests Linux, then
+uploads its AppImage, `.deb`, and matching metadata as the
+`bb-desktop-linux-x64` workflow artifact. Stable public release publication
+still attaches only the macOS artifacts. Linux support also remains available
+through the cross-platform `bb-app` npm package and browser UI.
+
 The automated nightly channel is the exception to the manual stable flow. The
 scheduled path in `publish-bb-app.yml` derives a unique next-patch prerelease,
 publishes it under npm's `nightly` dist-tag, then builds and publishes the
@@ -186,10 +195,13 @@ Report:
 ## Publish The Desktop App
 
 The npm publish does not build or publish the desktop app. The desktop release
-is a separate workflow that builds, signs, and notarizes the macOS app, creates
-the immutable `desktop-v<version>` GitHub release, and moves the `desktop-latest`
-release and its `desktop-version.json` auto-update feed. Run it from the same
-pushed `main` commit, at the same version, for every stable release.
+is a separate workflow that builds, signs, and notarizes the macOS arm64 app,
+creates the immutable `desktop-v<version>` GitHub release, and moves the
+`desktop-latest` release and its `desktop-version.json` auto-update feed. Run it
+from the same pushed `main` commit, at the same version, for every stable
+release. Its Ubuntu job also builds and packaged-smoke-tests Linux, uploading
+the Linux outputs as a workflow artifact; stable GitHub release publication
+still attaches only signed macOS assets.
 
 ```bash
 gh workflow run build-desktop.yml \
@@ -200,6 +212,7 @@ gh workflow run build-desktop.yml \
 
 - `release_channel=stable` is required to update `desktop-latest`; `qa` builds
   artifacts without moving the public feed.
+- The workflow runs on `macos-15` and verifies an Apple Silicon arm64 runner.
 - Only a non-prerelease version is published. The workflow refuses to publish a
   prerelease (`X.Y.Z-...`) to `desktop-latest`.
 - macOS signing/notarization secrets must be configured, or the workflow
@@ -209,6 +222,26 @@ gh workflow run build-desktop.yml \
 - The immutable `desktop-v<version>` release owns GitHub's repository-wide
   **Latest** designation. The moving `desktop-latest` release remains opted out;
   it exists only to provide stable download and auto-update URLs.
+
+The local build output is `apps/desktop/release/`. For version `<version>`, a
+stable build contains `bb-<version>-arm64.dmg`,
+`bb-<version>-arm64.zip`, corresponding blockmaps, and `latest-mac.yml`; the
+workflow generates `desktop-version.json` from that macOS metadata before
+uploading it. Nightly builds use `bb-nightly-<version>-arm64.dmg`,
+`bb-nightly-<version>-arm64.zip`, and `nightly-mac.yml` in the same directory.
+The public stable release includes the installer and updater metadata only when
+the signing/notarization gate is open; otherwise it intentionally contains the
+version feed alone.
+
+On a Linux x64 build, the corresponding local files are
+`bb-<version>-x86_64.AppImage`, `bb-<version>-amd64.deb`, and
+`latest-linux.yml`; nightly uses the `bb-nightly-<version>-` prefix and
+`nightly-linux.yml`. Run `pnpm --dir apps/desktop run desktop:version-feed`
+on the build host to generate `desktop-version.json`; it reports
+`platform: "linux"` for Linux and reads the Linux metadata. The Ubuntu job
+uploads these files, together with the installers, as the
+`bb-desktop-linux-x64` workflow artifact. They are not attached to the public
+`desktop-v<version>` or `desktop-latest` releases yet.
 
 If the `npm-release`-style environment or branch protection gates the run, tell
 the user and let the human approval be the release control point.
@@ -226,8 +259,19 @@ curl -fsSL https://github.com/get-bb/bb/releases/download/desktop-latest/desktop
 ```
 
 Confirm `desktop-version.json` reports the released version and that the
-`desktop-v<version>` release exists with the expected `.dmg`/`.zip` assets and
-is the release reported as GitHub's **Latest**.
+`desktop-v<version>` release exists with the expected signed macOS `.dmg`/`.zip`
+assets, its `latest-mac.yml` metadata and blockmaps, and is the release reported
+as GitHub's **Latest**. The feed should identify the platform as `macos`:
+
+```bash
+curl -fsSL https://github.com/get-bb/bb/releases/download/desktop-latest/desktop-version.json \
+  | jq -e '.platform == "macos" and .version != null'
+```
+
+`latest-linux.yml` and `nightly-linux.yml` are the corresponding metadata names
+for Linux AppImage updates. They are currently available from the Linux CI
+workflow artifact rather than a public release. The Linux `.deb` target does not enable native
+`electron-updater`; it is updated by installing a newer package.
 
 Add to the report from "Verify The Release":
 
@@ -255,3 +299,7 @@ Add to the report from "Verify The Release":
 - If the desktop workflow publishes `desktop-version.json` only (binaries
   withheld), the macOS signing secrets are missing or incomplete. Fix the
   secrets and re-run; do not hand-upload unsigned binaries to `desktop-latest`.
+- Do not attach Linux artifacts to the public release until the release policy
+  explicitly enables that path. The workflow already has a Linux x64 build,
+  packaged smoke coverage, and workflow-artifact publication of the AppImage,
+  `.deb`, and matching feed. There is no `.rpm` artifact to publish.

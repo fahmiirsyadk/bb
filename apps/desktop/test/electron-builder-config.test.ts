@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
@@ -17,6 +18,7 @@ import {
   createDesktopReleaseInfo,
   DESKTOP_AUTO_UPDATE_FEED_CONFIG,
 } from "../src/desktop-update-provider.js";
+import { resolveDesktopUpdateMetadataFileName as resolveReleaseMetadataFileName } from "../scripts/desktop-release-channel.mjs";
 
 const desktopPackageRoot = process.cwd();
 
@@ -29,6 +31,33 @@ const macConfigSchema = z
     icon: z.string().min(1),
     identity: z.string().nullable().optional(),
     notarize: z.boolean(),
+  })
+  .passthrough();
+
+const linuxTargetSchema = z
+  .object({
+    arch: z.array(z.enum(["x64", "arm64"])).min(1),
+    target: z.enum(["AppImage", "deb"]),
+  })
+  .passthrough();
+
+const linuxConfigSchema = z
+  .object({
+    category: z.literal("Development"),
+    desktop: z
+      .object({
+        entry: z.record(z.string(), z.string()),
+      })
+      .passthrough(),
+    executableName: z.enum(["bb", "bb-nightly"]),
+    icon: z.enum(["assets/icon.png", "assets/icon-nightly.png"]),
+    target: z.array(linuxTargetSchema).min(2),
+  })
+  .passthrough();
+
+const debConfigSchema = z
+  .object({
+    packageName: z.enum(["bb", "bb-nightly"]),
   })
   .passthrough();
 
@@ -59,6 +88,8 @@ const electronBuilderConfigSchema = z
     npmRebuild: z.literal(false),
     appId: z.string().min(1),
     artifactName: z.string().min(1),
+    deb: debConfigSchema,
+    linux: linuxConfigSchema,
     productName: z.string().min(1),
     publish: z.tuple([
       z
@@ -74,10 +105,17 @@ const electronBuilderConfigSchema = z
 
 const desktopPackageJsonSchema = z
   .object({
+    description: z.literal("Cross-platform Electron shell for bb"),
     main: z.literal("dist/main.js"),
     // Optional: the desktop app no longer pins per-architecture plugin build
     // binaries, so it may declare none at all.
     optionalDependencies: z.record(z.string(), z.string()).optional(),
+    scripts: z
+      .object({
+        "desktop:build": z.string().min(1),
+        package: z.string().min(1),
+      })
+      .passthrough(),
     type: z.never().optional(),
   })
   .passthrough();
@@ -124,7 +162,14 @@ type RunConfigScript = (
 type ReadResolvedConfig = (
   overrides: EnvironmentOverrides,
 ) => Promise<ReadResolvedConfigResult>;
-type RunNativePrepScript = (appOutDir: string) => Promise<ScriptRunResult>;
+type NativePrepOptions = {
+  arch?: string;
+  platform?: "darwin" | "linux";
+};
+type RunNativePrepScript = (
+  appOutDir: string,
+  options?: NativePrepOptions,
+) => Promise<ScriptRunResult>;
 
 const createScriptEnvironment: CreateScriptEnvironment = (overrides) => {
   const env = { ...process.env };
@@ -174,14 +219,17 @@ const runConfigScript: RunConfigScript = async (overrides) => {
   };
 };
 
-const runNativePrepScript: RunNativePrepScript = async (appOutDir) => {
-  const child = spawn(
-    process.execPath,
-    ["scripts/prepare-native-modules.cjs", appOutDir],
-    {
-      cwd: desktopPackageRoot,
-    },
-  );
+const runNativePrepScript: RunNativePrepScript = async (appOutDir, options) => {
+  const scriptArgs = ["scripts/prepare-native-modules.cjs", appOutDir];
+  if (options?.arch !== undefined) {
+    scriptArgs.push(`--arch=${options.arch}`);
+  }
+  if (options?.platform !== undefined) {
+    scriptArgs.push(`--platform=${options.platform}`);
+  }
+  const child = spawn(process.execPath, scriptArgs, {
+    cwd: desktopPackageRoot,
+  });
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
 
@@ -224,6 +272,43 @@ describe("electron-builder signing config", () => {
 
     expect(packageJson.main).toBe("dist/main.js");
     expect(packageJson).not.toHaveProperty("type");
+    expect(packageJson).not.toHaveProperty("os");
+    expect(packageJson.description).toBe(
+      "Cross-platform Electron shell for bb",
+    );
+    expect(packageJson.scripts["desktop:build"]).not.toMatch(
+      /--(?:mac|linux)/u,
+    );
+    expect(packageJson.scripts.package).not.toMatch(/--(?:mac|linux)/u);
+  });
+
+  it("configures Linux AppImage and deb artifacts with desktop metadata", async () => {
+    const { config } = await readResolvedConfig({});
+    const targets = config.linux.target.map(({ target, arch }) => ({
+      arch,
+      target,
+    }));
+
+    expect(targets).toEqual([
+      { arch: ["x64"], target: "AppImage" },
+      { arch: ["x64"], target: "deb" },
+    ]);
+    expect(config).not.toHaveProperty("rpm");
+    expect(config.linux).toMatchObject({
+      category: "Development",
+      executableName: "bb",
+      icon: "assets/icon.png",
+    });
+    expect(config.linux.desktop.entry).toMatchObject({
+      Categories: "Development;IDE;",
+      Keywords: "bb;developer;workspace;",
+      Name: "bb",
+      StartupWMClass: "bb",
+    });
+    expect(config.deb.packageName).toBe("bb");
+    await expect(
+      access(resolve(desktopPackageRoot, config.linux.icon)),
+    ).resolves.toBeUndefined();
   });
 
   it("ships no plugin build toolchain binaries", async () => {
@@ -265,6 +350,30 @@ describe("electron-builder signing config", () => {
     await expect(
       access(resolve(desktopPackageRoot, hookPath)),
     ).resolves.toBeUndefined();
+  });
+
+  it("uses the Electron target platform for native module prebuilds", () => {
+    const requireFromDesktop = createRequire(
+      resolve(desktopPackageRoot, "package.json"),
+    );
+    const { resolveBetterSqlite3PrebuildArguments } = requireFromDesktop(
+      "./scripts/prepare-native-modules.cjs",
+    );
+
+    expect(
+      resolveBetterSqlite3PrebuildArguments({
+        arch: "x64",
+        electronVersion: "41.7.0",
+        platform: "darwin",
+      }),
+    ).toContain("--platform=darwin");
+    expect(
+      resolveBetterSqlite3PrebuildArguments({
+        arch: "x64",
+        electronVersion: "41.7.0",
+        platform: "linux",
+      }),
+    ).toContain("--platform=linux");
   });
 
   it("installs native plugin build packages for arm64 and x64", async () => {
@@ -364,7 +473,10 @@ describe("electron-builder signing config", () => {
       await mkdir(dirname(helperPath), { recursive: true });
       await writeFile(helperPath, "helper");
       await chmod(helperPath, 0o644);
-      const result = await runNativePrepScript(appOutDir);
+      const result = await runNativePrepScript(appOutDir, {
+        arch: "arm64",
+        platform: "darwin",
+      });
 
       expect(result.exitCode).toBe(0);
       await expect(
@@ -375,6 +487,74 @@ describe("electron-builder signing config", () => {
       );
       expect((await stat(helperPath)).mode & 0o777).toBe(0o755);
       expect((await stat(rebuiltHelperPath)).mode & 0o777).toBe(0o755);
+    } finally {
+      await rm(appOutDir, { force: true, recursive: true });
+    }
+  });
+
+  it("prepares the Linux node-pty helper for the packaged architecture", async () => {
+    const appOutDir = await mkdtemp(
+      resolve(tmpdir(), "bb-desktop-linux-native-modules-"),
+    );
+    const nodePtyPackageDir = resolve(
+      appOutDir,
+      "resources",
+      "app.asar.unpacked",
+      "node_modules",
+      "node-pty",
+    );
+    const rebuiltHelperPath = resolve(
+      nodePtyPackageDir,
+      "build",
+      "Release",
+      "spawn-helper",
+    );
+    const linuxHelperPath = resolve(
+      nodePtyPackageDir,
+      "prebuilds",
+      "linux-x64",
+      "spawn-helper",
+    );
+    const darwinHelperPath = resolve(
+      nodePtyPackageDir,
+      "prebuilds",
+      "darwin-x64",
+      "spawn-helper",
+    );
+    const unixTerminalPath = resolve(
+      nodePtyPackageDir,
+      "lib",
+      "unixTerminal.js",
+    );
+
+    try {
+      await mkdir(dirname(unixTerminalPath), { recursive: true });
+      await writeFile(
+        unixTerminalPath,
+        "helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');",
+      );
+      await mkdir(dirname(rebuiltHelperPath), { recursive: true });
+      await writeFile(rebuiltHelperPath, "rebuilt-helper");
+      await chmod(rebuiltHelperPath, 0o644);
+      await mkdir(dirname(linuxHelperPath), { recursive: true });
+      await writeFile(linuxHelperPath, "linux-helper");
+      await chmod(linuxHelperPath, 0o644);
+      await mkdir(dirname(darwinHelperPath), { recursive: true });
+      await writeFile(darwinHelperPath, "darwin-helper");
+      await chmod(darwinHelperPath, 0o644);
+
+      const result = await runNativePrepScript(appOutDir, {
+        arch: "x64",
+        platform: "linux",
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect((await stat(rebuiltHelperPath)).mode & 0o777).toBe(0o755);
+      expect((await stat(linuxHelperPath)).mode & 0o777).toBe(0o755);
+      expect((await stat(darwinHelperPath)).mode & 0o777).toBe(0o644);
+      await expect(readFile(unixTerminalPath, "utf8")).resolves.toContain(
+        "helperPath.replace(/app\\.asar(?!\\.unpacked)/g, 'app.asar.unpacked')",
+      );
     } finally {
       await rm(appOutDir, { force: true, recursive: true });
     }
@@ -432,6 +612,12 @@ describe("electron-builder signing config", () => {
     expect(DESKTOP_AUTO_UPDATE_FEED_CONFIG.url).toBe(
       "https://github.com/get-bb/bb/releases/download/desktop-latest/",
     );
+    expect(resolveReleaseMetadataFileName("latest", "darwin")).toBe(
+      "latest-mac.yml",
+    );
+    expect(resolveReleaseMetadataFileName("latest", "linux")).toBe(
+      "latest-linux.yml",
+    );
   });
 
   it("creates a separate nightly app identity and update feed", async () => {
@@ -444,17 +630,30 @@ describe("electron-builder signing config", () => {
     expect(config.productName).toBe("bb Nightly");
     expect(config.artifactName).toBe("bb-nightly-${version}-${arch}.${ext}");
     expect(config.mac.icon).toBe("assets/icon-nightly.icns");
+    expect(config.linux.icon).toBe("assets/icon-nightly.png");
+    expect(config.linux.executableName).toBe("bb-nightly");
+    expect(config.linux.desktop.entry).toMatchObject({
+      Name: "bb Nightly",
+      StartupWMClass: "bb Nightly",
+    });
+    expect(config.deb.packageName).toBe("bb-nightly");
     await expect(
       access(resolve(desktopPackageRoot, config.mac.icon)),
     ).resolves.toBeUndefined();
     await expect(
-      access(resolve(desktopPackageRoot, "assets/icon-nightly.png")),
+      access(resolve(desktopPackageRoot, config.linux.icon)),
     ).resolves.toBeUndefined();
     expect(config.publish[0]).toEqual({
       channel: "nightly",
       provider: "generic",
       url: nightlyRelease.updateReleaseBaseUrl,
     });
+    expect(resolveReleaseMetadataFileName("nightly", "darwin")).toBe(
+      "nightly-mac.yml",
+    );
+    expect(resolveReleaseMetadataFileName("nightly", "linux")).toBe(
+      "nightly-linux.yml",
+    );
   });
 
   it("rejects unknown desktop release channels", async () => {

@@ -179,6 +179,25 @@ export function resolveElectronBuilderConfig(baseConfig, env) {
   }
 
   config.mac = mac;
+  const linux = config.linux ?? {};
+  const linuxDesktop = linux.desktop ?? {};
+  config.linux = {
+    ...linux,
+    icon: releaseConfig.linuxIconPath,
+    executableName: releaseConfig.linuxExecutableName,
+    desktop: {
+      ...linuxDesktop,
+      entry: {
+        ...(linuxDesktop.entry ?? {}),
+        Name: releaseConfig.applicationName,
+        StartupWMClass: releaseConfig.applicationName,
+      },
+    },
+  };
+  config.deb = {
+    ...(config.deb ?? {}),
+    packageName: releaseConfig.linuxPackageName,
+  };
   config.appId = releaseConfig.appId;
   config.artifactName = releaseConfig.artifactName;
   config.productName = releaseConfig.applicationName;

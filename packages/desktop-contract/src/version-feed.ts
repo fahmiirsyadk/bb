@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bbDesktopPlatformSchema } from "./info.js";
 
 const isoUtcDateTimeSchema = z.iso.datetime();
 
@@ -11,7 +12,7 @@ export const bbDesktopVersionFeedFileSchema = z.object({
 export const bbDesktopVersionFeedSchema = z.object({
   schemaVersion: z.literal(1),
   channel: z.enum(["latest", "nightly"]),
-  platform: z.literal("macos"),
+  platform: bbDesktopPlatformSchema,
   version: z.string().min(1),
   releaseDate: isoUtcDateTimeSchema,
   releaseName: z.string().min(1),

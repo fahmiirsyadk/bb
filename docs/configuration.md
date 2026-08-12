@@ -134,6 +134,12 @@ signal it, so a stale file left by a crash cannot stop an unrelated process.
 | `BB_LOG_LEVEL`          | `bb-app config`                                    | Startup-only debugging  | Log level: `trace`, `debug`, `info`, `warn`, `error`, or `fatal`. A full launcher or desktop app restart is required.                                                                                                                   |
 | `OPENAI_API_KEY`        | `bb-app env`                                       | OpenAI opt-in routes    | Required only when selecting explicit OpenAI provider routes such as `openai/gpt-4o-mini` or `openai/gpt-transcribe`.                                                                                                                   |
 
+The standalone CLI expects BB_SERVER_URL to be a BB API URL, a daemon-managed
+machine-auth proxy URL, or a private/Tailscale URL. It cannot reuse a browser
+session for a browser-only gateway such as Cloudflare Access. If the URL sends
+the CLI to an Access sign-in page, enroll the machine so the host daemon can
+provide its local authenticated proxy, or use a CLI-reachable private URL.
+
 By default, helper inference and voice transcription use Codex credentials from
 the host daemon. Run `codex login` on the host for the default path. Set
 provider env keys only when opting into a non-Codex provider route.
@@ -149,6 +155,32 @@ while enabled, preventing system idle sleep while bb is running; turning it off
 stops that process. It only blocks idle sleep: closing a laptop lid or choosing
 Sleep manually still sleeps the Mac. The toggle is hidden unless the connected
 primary host daemon reports macOS.
+
+## Desktop shell diagnostics
+
+The Electron desktop shell has macOS and Linux runtime paths. Its configured
+installer targets are macOS arm64 and Linux x64 AppImage/`.deb`; Linux arm64 is
+not an installer target and `.rpm` is not configured. Linux and WSL2 can still
+use the browser-based `bb-app` runtime. The following are environment overrides
+for desktop development or diagnostics, not `bb-app config` keys:
+
+| Variable                            | Use                                                                                                                                                                   |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BB_DESKTOP_OPEN_DEVTOOLS=1`        | Open Electron DevTools when the desktop shell launches.                                                                                                               |
+| `BB_DESKTOP_USER_DATA_DIR=<path>`   | Override the Electron user-data directory for source development.                                                                                                     |
+| `BB_DESKTOP_VERSION_CHECK=1`        | Enable the lightweight `desktop-version.json` check in an unpackaged development run.                                                                                 |
+| `BB_DESKTOP_VERSION_FEED_URL=<url>` | Point that lightweight development check at a test feed. It does not change the native updater feed.                                                                  |
+| `BB_DESKTOP_AUTO_UPDATE=1`          | Enable `electron-updater` in an unpackaged macOS development run. Linux requires the AppImage runtime (`APPIMAGE`); `.deb` installs keep native auto-update disabled. |
+
+The renderer-facing `desktop-version.json` feed is generated from the
+platform-specific electron-builder metadata: `latest-mac.yml`/
+`nightly-mac.yml` on macOS and `latest-linux.yml`/`nightly-linux.yml` on Linux.
+Packaged Linux AppImages can use native `electron-updater` with the Linux
+metadata; `.deb` installations must be updated by installing a newer package.
+Stable public desktop releases publish macOS metadata and installers only. The
+manually dispatched Build Desktop workflow uploads the Linux feed and
+installers as the `bb-desktop-linux-x64` workflow artifact, pending public
+Linux release publication.
 
 The "Show unhandled provider events" toggle in Settings → General exposes raw
 provider events that bb does not yet understand. It defaults to off in packaged

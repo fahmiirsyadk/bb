@@ -30,4 +30,13 @@ describe("bbDesktopInfoSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepts Linux desktop info", () => {
+    expect(
+      bbDesktopInfoSchema.safeParse({
+        ...baseInfo,
+        platform: "linux",
+      }).success,
+    ).toBe(true);
+  });
 });

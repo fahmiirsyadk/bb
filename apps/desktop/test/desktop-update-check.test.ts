@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { BbDesktopVersionFeed } from "@bb/desktop-contract";
+import type {
+  BbDesktopPlatform,
+  BbDesktopVersionFeed,
+} from "@bb/desktop-contract";
 import {
   createDesktopUpdateService,
   DESKTOP_UPDATE_ACTIVE_MIN_INTERVAL_MS,
@@ -9,7 +12,10 @@ import {
 
 const checkedAt = "2026-05-21T00:00:00.000Z";
 
-function createFeed(version: string): BbDesktopVersionFeed {
+function createFeed(
+  version: string,
+  platform: BbDesktopPlatform = "macos",
+): BbDesktopVersionFeed {
   return {
     channel: "latest",
     files: [
@@ -21,7 +27,7 @@ function createFeed(version: string): BbDesktopVersionFeed {
     ],
     minimumSystemVersion: null,
     path: `bb-${version}-universal.zip`,
-    platform: "macos",
+    platform,
     releaseDate: checkedAt,
     releaseName: `bb desktop ${version}`,
     releaseNotes: null,
@@ -32,8 +38,11 @@ function createFeed(version: string): BbDesktopVersionFeed {
   };
 }
 
-function createFeedResponse(version: string): Response {
-  return new Response(JSON.stringify(createFeed(version)), {
+function createFeedResponse(
+  version: string,
+  platform: BbDesktopPlatform = "macos",
+): Response {
+  return new Response(JSON.stringify(createFeed(version, platform)), {
     headers: { "content-type": "application/json" },
   });
 }
@@ -44,6 +53,7 @@ describe("desktop update feed parsing", () => {
       checkedAt,
       currentVersion: "0.0.1",
       payloadText: JSON.stringify(createFeed("0.0.2")),
+      platform: "macos",
     });
 
     expect(result.kind).toBe("valid");
@@ -59,6 +69,34 @@ describe("desktop update feed parsing", () => {
       updateDownloaded: false,
       version: "0.0.1",
     });
+  });
+
+  it("keeps Linux update state typed and rejects a macOS feed", () => {
+    const linuxResult = parseDesktopVersionFeed({
+      checkedAt,
+      currentVersion: "0.0.1",
+      payloadText: JSON.stringify(createFeed("0.0.2", "linux")),
+      platform: "linux",
+    });
+
+    expect(linuxResult.kind).toBe("valid");
+    if (linuxResult.kind !== "valid") {
+      throw new Error(linuxResult.reason);
+    }
+    expect(linuxResult.info.platform).toBe("linux");
+
+    const mismatchedResult = parseDesktopVersionFeed({
+      checkedAt,
+      currentVersion: "0.0.1",
+      payloadText: JSON.stringify(createFeed("0.0.2", "macos")),
+      platform: "linux",
+    });
+
+    expect(mismatchedResult.kind).toBe("malformed");
+    if (mismatchedResult.kind !== "malformed") {
+      throw new Error("Expected a mismatched platform feed to be rejected");
+    }
+    expect(mismatchedResult.reason).toContain("targeted macos");
   });
 
   it("rejects a payload with a missing required field", () => {
@@ -86,6 +124,7 @@ describe("desktop update feed parsing", () => {
       checkedAt,
       currentVersion: "0.0.1",
       payloadText: JSON.stringify(payload),
+      platform: "macos",
     });
 
     expect(result.kind).toBe("malformed");
@@ -96,6 +135,7 @@ describe("desktop update feed parsing", () => {
       checkedAt,
       currentVersion: "0.0.1",
       payloadText: "{",
+      platform: "macos",
     });
 
     expect(result.kind).toBe("malformed");
@@ -106,6 +146,7 @@ describe("desktop update feed parsing", () => {
       checkedAt,
       currentVersion: "0.0.2",
       payloadText: JSON.stringify(createFeed("0.0.1")),
+      platform: "macos",
     });
 
     expect(result.kind).toBe("valid");
@@ -143,6 +184,7 @@ describe("desktop update service", () => {
       fetchImpl,
       logger: { warn() {} },
       now: () => nowMs,
+      platform: "macos",
     });
 
     const successfulInfo = await service.checkForUpdates();
@@ -201,6 +243,7 @@ describe("desktop update service", () => {
         fetchImpl,
         logger: { warn() {} },
         now: () => nowMs,
+        platform: "macos",
       });
 
       await service.checkForUpdates();
@@ -238,6 +281,7 @@ describe("desktop update service", () => {
       fetchImpl,
       logger: { warn() {} },
       now: () => nowMs,
+      platform: "macos",
     });
 
     const firstInfo = await service.checkAfterActive();

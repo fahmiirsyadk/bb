@@ -21,9 +21,13 @@ export function createDesktopReleaseConfig(channel) {
       applicationName: "bb Nightly",
       artifactName: "bb-nightly-${version}-${arch}.${ext}",
       iconFileName: "icon-nightly.png",
+      linuxIconPath: "assets/icon-nightly.png",
+      linuxExecutableName: "bb-nightly",
+      linuxPackageName: "bb-nightly",
       macIconPath: "assets/icon-nightly.icns",
       releaseTag: "desktop-nightly",
       updateMetadataFileName: "nightly-mac.yml",
+      linuxUpdateMetadataFileName: "nightly-linux.yml",
     };
   }
 
@@ -32,12 +36,31 @@ export function createDesktopReleaseConfig(channel) {
     applicationName: "bb",
     artifactName: "${productName}-${version}-${arch}.${ext}",
     iconFileName: "icon.png",
+    linuxIconPath: "assets/icon.png",
+    linuxExecutableName: "bb",
+    linuxPackageName: "bb",
     macIconPath: "assets/icon.icns",
     releaseTag: "desktop-latest",
     updateMetadataFileName: "latest-mac.yml",
+    linuxUpdateMetadataFileName: "latest-linux.yml",
   };
 }
 
 export function createDesktopUpdateReleaseBaseUrl(releaseTag) {
   return `https://github.com/get-bb/bb/releases/download/${releaseTag}/`;
+}
+
+export function resolveDesktopUpdateMetadataFileName(channel, platform) {
+  const releaseConfig = createDesktopReleaseConfig(channel);
+
+  if (platform === "darwin") {
+    return releaseConfig.updateMetadataFileName;
+  }
+  if (platform === "linux") {
+    return releaseConfig.linuxUpdateMetadataFileName;
+  }
+
+  throw new Error(
+    `Unsupported desktop platform for update metadata: ${String(platform)}.`,
+  );
 }

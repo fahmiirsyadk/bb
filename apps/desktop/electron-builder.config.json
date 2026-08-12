@@ -48,6 +48,31 @@
       }
     ]
   },
+  "linux": {
+    "category": "Development",
+    "desktop": {
+      "entry": {
+        "Categories": "Development;IDE;",
+        "Keywords": "bb;developer;workspace;"
+      }
+    },
+    "executableName": "bb",
+    "icon": "assets/icon.png",
+    "maintainer": "bb contributors <bb@getbb.app>",
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      },
+      {
+        "target": "deb",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "deb": {
+    "packageName": "bb"
+  },
   "dmg": {
     "sign": false
   },

@@ -172,6 +172,7 @@ import {
   PROCESS_LOG_LINE_LIMIT,
   STARTUP_POLL_INTERVAL_MS,
   STARTUP_TIMEOUT_MS,
+  resolveDesktopPlatform,
   type RuntimeOwnership,
   type WindowStateKey,
 } from "./types.js";
@@ -181,6 +182,7 @@ const OWNED_RUNTIME_KILL_TIMEOUT_MS = 1_000;
 const FOREIGN_RUNTIME_STOP_TIMEOUT_MS = 15_000;
 const FOREIGN_RUNTIME_KILL_TIMEOUT_MS = 3_000;
 const REMOTE_SYSTEM_CONFIG_POLL_INTERVAL_MS = 5 * 60 * 1000;
+const desktopPlatform = resolveDesktopPlatform(process.platform);
 
 interface DesktopRuntime {
   bbProcess: BbAppProcess | null;
@@ -519,9 +521,7 @@ function createDesktopPathContext(): DesktopPathContext {
 function shouldEnableServerDaemonLogsMenu(): boolean {
   // Attached runtimes are owned by an external bb-app, so the desktop has no
   // reliable server/daemon log lifecycle to tail.
-  return (
-    process.platform === "darwin" && currentRuntime?.ownership === "spawned"
-  );
+  return currentRuntime?.ownership === "spawned";
 }
 
 // Close requests routed through the renderer, keyed by webContents id. If the
@@ -1934,7 +1934,7 @@ async function runDesktopApp(): Promise<void> {
     env: process.env,
     isPackaged: app.isPackaged,
     logger: createDesktopLogger(),
-    platform: process.platform,
+    platform: desktopPlatform === "macos" ? "darwin" : "linux",
   });
 
   app.setName(app.isPackaged ? DESKTOP_RELEASE_INFO.applicationName : "bb-dev");
@@ -1955,7 +1955,7 @@ async function runDesktopApp(): Promise<void> {
   });
   app.on("before-quit", handleBeforeQuit);
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    if (desktopPlatform !== "macos") {
       app.quit();
     }
   });
@@ -2058,7 +2058,7 @@ async function runDesktopApp(): Promise<void> {
   // rendering. Dev runs still need it to show icon-dev.png instead of the
   // stock Electron icon.
   if (
-    process.platform === "darwin" &&
+    desktopPlatform === "macos" &&
     app.dock !== undefined &&
     !paths.isPackaged
   ) {
@@ -2126,16 +2126,22 @@ async function runDesktopApp(): Promise<void> {
     enabled: app.isPackaged || process.env.BB_DESKTOP_VERSION_CHECK === "1",
     feedUrl: desktopUpdateFeedUrl,
     logger: createDesktopLogger(),
+    platform: desktopPlatform,
+  });
+  const nativeAutoUpdateEnabled = shouldEnableDesktopAutoUpdate({
+    env: process.env,
+    isPackaged: app.isPackaged,
+    platform: desktopPlatform,
   });
   desktopAutoUpdateService = createDesktopAutoUpdateService({
     currentVersion: desktopVersion,
-    enabled: shouldEnableDesktopAutoUpdate({
-      env: process.env,
-      isPackaged: app.isPackaged,
-    }),
+    enabled: nativeAutoUpdateEnabled,
     forceDevUpdateConfig:
-      !app.isPackaged && process.env.BB_DESKTOP_AUTO_UPDATE === "1",
+      nativeAutoUpdateEnabled &&
+      !app.isPackaged &&
+      process.env.BB_DESKTOP_AUTO_UPDATE === "1",
     logger: createDesktopLogger(),
+    platform: desktopPlatform,
     updater: createElectronAutoUpdaterAdapter(autoUpdater),
   });
   desktopUpdateService.subscribe(() => {
@@ -2170,7 +2176,7 @@ async function runDesktopApp(): Promise<void> {
     resolveAppCommand(input) {
       return resolveDesktopBrowserAppCommand({
         input,
-        isMac: process.platform === "darwin",
+        isMac: desktopPlatform === "macos",
         keybindings: currentAppKeybindings,
       });
     },
@@ -2200,6 +2206,7 @@ async function runDesktopApp(): Promise<void> {
     openExternalUrl(openArgs) {
       void shell.openExternal(openArgs.url);
     },
+    platform: desktopPlatform,
     preloadPath,
     userDataPath,
   });

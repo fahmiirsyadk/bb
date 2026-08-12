@@ -100,6 +100,31 @@ describe("desktop version feed schema", () => {
     ).toBe(true);
   });
 
+  it("accepts a Linux desktop version feed", () => {
+    expect(
+      bbDesktopVersionFeedSchema.safeParse({
+        channel: "latest",
+        files: [
+          {
+            sha512: "BASE64_SHA512_FROM_ELECTRON_BUILDER",
+            size: 123456789,
+            url: "bb-0.0.2-x86_64.AppImage",
+          },
+        ],
+        minimumSystemVersion: null,
+        path: "bb-0.0.2-x86_64.AppImage",
+        platform: "linux",
+        releaseDate: checkedAt,
+        releaseName: "bb desktop 0.0.2",
+        releaseNotes: null,
+        schemaVersion: 1,
+        sha512: "BASE64_SHA512_FROM_ELECTRON_BUILDER",
+        stagingPercentage: null,
+        version: "0.0.2",
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects malformed version feed payloads", () => {
     expect(
       bbDesktopVersionFeedSchema.safeParse({

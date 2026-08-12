@@ -22,19 +22,35 @@ const PACKAGED_NATIVE_PACKAGE_NAMES = [
 // `npmRebuild` is disabled and we fetch the Electron prebuild into the packaged
 // copy here, leaving the shared store untouched. Desktop dev runs bb-app with
 // the host Node executable so it can use the workspace's normal Node-ABI binary.
-const NATIVE_MODULE_PLATFORM = "darwin";
-
-const NODE_PTY_PREBUILD_PLATFORMS = ["darwin-arm64", "darwin-x64"];
-const NODE_PTY_SPAWN_HELPER_RELATIVE_PATHS = [
-  path.join("build", "Release", "spawn-helper"),
-  ...NODE_PTY_PREBUILD_PLATFORMS.map((platform) =>
-    path.join("prebuilds", platform, "spawn-helper"),
-  ),
-];
+const DEFAULT_NATIVE_MODULE_PLATFORM = process.platform;
+const SUPPORTED_NATIVE_MODULE_PLATFORMS = new Set(["darwin", "linux"]);
 const NODE_PTY_ASAR_HELPER_PATH_REWRITE =
   "helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');";
 const NODE_PTY_IDEMPOTENT_ASAR_HELPER_PATH_REWRITE =
   "helperPath = helperPath.replace(/app\\.asar(?!\\.unpacked)/g, 'app.asar.unpacked');";
+
+function resolveNativeModulePlatform(
+  platform = DEFAULT_NATIVE_MODULE_PLATFORM,
+) {
+  if (SUPPORTED_NATIVE_MODULE_PLATFORMS.has(platform)) {
+    return platform;
+  }
+
+  throw new Error(
+    `Unsupported native module platform: ${String(platform)}. Expected darwin or linux`,
+  );
+}
+
+function resolveNodePtySpawnHelperRelativePaths({
+  platform = DEFAULT_NATIVE_MODULE_PLATFORM,
+  arch = process.arch,
+} = {}) {
+  const resolvedPlatform = resolveNativeModulePlatform(platform);
+  return [
+    path.join("build", "Release", "spawn-helper"),
+    path.join("prebuilds", `${resolvedPlatform}-${arch}`, "spawn-helper"),
+  ];
+}
 
 async function isDirectory(directoryPath) {
   try {
@@ -141,22 +157,30 @@ async function patchNodePtyHelperPath(packageDirectory) {
   );
 }
 
-async function prepareNodePtyPackageDirectory(packageDirectory) {
+async function prepareNodePtyPackageDirectory(
+  packageDirectory,
+  { arch = process.arch, platform = DEFAULT_NATIVE_MODULE_PLATFORM } = {},
+) {
   await patchNodePtyHelperPath(packageDirectory);
 
   await Promise.all(
-    NODE_PTY_SPAWN_HELPER_RELATIVE_PATHS.map((relativePath) =>
-      chmodIfPresent(path.join(packageDirectory, relativePath), 0o755),
+    resolveNodePtySpawnHelperRelativePaths({ arch, platform }).map(
+      (relativePath) =>
+        chmodIfPresent(path.join(packageDirectory, relativePath), 0o755),
     ),
   );
 }
 
-function resolveBetterSqlite3PrebuildArguments({ electronVersion, arch }) {
+function resolveBetterSqlite3PrebuildArguments({
+  electronVersion,
+  arch,
+  platform = DEFAULT_NATIVE_MODULE_PLATFORM,
+} = {}) {
   return [
     "--runtime=electron",
     `--target=${electronVersion}`,
     `--arch=${arch}`,
-    `--platform=${NATIVE_MODULE_PLATFORM}`,
+    `--platform=${resolveNativeModulePlatform(platform)}`,
   ];
 }
 
@@ -203,6 +227,9 @@ async function preparePackagedNativeModules(appOutDir, options = {}) {
     throw new Error(`Packaged app output does not exist: ${appOutDir}`);
   }
 
+  const platform = resolveNativeModulePlatform(options.platform);
+  const arch = options.arch ?? process.arch;
+
   const packageDirectories = await findPackageDirectories(
     appOutDir,
     PACKAGED_NATIVE_PACKAGE_NAMES,
@@ -213,7 +240,11 @@ async function preparePackagedNativeModules(appOutDir, options = {}) {
       `Unable to find ${NODE_PTY_PACKAGE_NAME} under ${appOutDir}`,
     );
   }
-  await Promise.all(nodePtyDirectories.map(prepareNodePtyPackageDirectory));
+  await Promise.all(
+    nodePtyDirectories.map((packageDirectory) =>
+      prepareNodePtyPackageDirectory(packageDirectory, { arch, platform }),
+    ),
+  );
 
   // The Electron target is only known on the real afterPack path. Standalone
   // invocations (e.g. tests, manual node-pty repair) omit it and skip the fetch.
@@ -232,8 +263,9 @@ async function preparePackagedNativeModules(appOutDir, options = {}) {
   await Promise.all(
     betterSqlite3Directories.map((packageDirectory) =>
       prepareBetterSqlite3PackageDirectory(packageDirectory, {
-        arch: options.arch,
+        arch,
         electronVersion: options.electronVersion,
+        platform,
       }),
     ),
   );
@@ -266,6 +298,7 @@ async function afterPack(context) {
   await preparePackagedNativeModules(context.appOutDir, {
     arch: resolveArchName(context),
     electronVersion: resolveElectronVersion(),
+    platform: context.electronPlatformName,
   });
 }
 
@@ -284,11 +317,19 @@ function parseStandaloneArguments(argv) {
       options.arch = archMatch[1];
       continue;
     }
+    const platformMatch = argument.match(/^--platform=(.+)$/);
+    if (platformMatch) {
+      options.platform = platformMatch[1];
+      continue;
+    }
     appOutDir = argument;
   }
 
   if (options.arch === undefined) {
     options.arch = process.arch;
+  }
+  if (options.platform === undefined) {
+    options.platform = process.platform;
   }
 
   return { appOutDir, options };
@@ -301,7 +342,7 @@ async function main() {
   if (appOutDir === undefined || appOutDir.length === 0) {
     throw new Error(
       "Usage: node apps/desktop/scripts/prepare-native-modules.cjs <appOutDir> " +
-        "[--electron-version=<version>] [--arch=<arch>]",
+        "[--electron-version=<version>] [--arch=<arch>] [--platform=<platform>]",
     );
   }
 
@@ -314,6 +355,9 @@ module.exports.prepareNodePtyPackageDirectory = prepareNodePtyPackageDirectory;
 module.exports.prepareBetterSqlite3PackageDirectory =
   prepareBetterSqlite3PackageDirectory;
 module.exports.preparePackagedNativeModules = preparePackagedNativeModules;
+module.exports.resolveNativeModulePlatform = resolveNativeModulePlatform;
+module.exports.resolveNodePtySpawnHelperRelativePaths =
+  resolveNodePtySpawnHelperRelativePaths;
 module.exports.resolveBetterSqlite3PrebuildArguments =
   resolveBetterSqlite3PrebuildArguments;
 

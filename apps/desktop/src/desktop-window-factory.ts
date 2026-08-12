@@ -4,6 +4,7 @@ import {
   MIN_WINDOW_WIDTH,
   PRIMARY_WINDOW_STATE_KEY,
   type DisplayWorkArea,
+  type DesktopPlatform,
   type WindowBounds,
   type WindowStateKey,
 } from "./types.js";
@@ -89,6 +90,7 @@ export interface CreateDesktopWindowFactoryArgs {
   icon: DesktopWindowIcon;
   isQuitting(): boolean;
   openExternalUrl(args: OpenExternalUrlArgs): void;
+  platform: DesktopPlatform;
   preloadPath: string;
   userDataPath: string;
 }
@@ -130,12 +132,14 @@ interface ResolveWindowStateKeyArgs {
 
 interface LoadUrlIntoWindowArgs {
   browserWindow: DesktopBrowserWindow;
+  platform: DesktopPlatform;
   url: string;
 }
 
 interface CreateWindowOptionsArgs {
   bounds: WindowBounds;
   icon: DesktopWindowIcon;
+  platform: DesktopPlatform;
   preloadPath: string;
 }
 
@@ -165,16 +169,26 @@ function resolveWindowStateKey(
 function createWindowOptions(
   args: CreateWindowOptionsArgs,
 ): BrowserWindowConstructorOptions {
+  const macOsWindowOptions: Pick<
+    BrowserWindowConstructorOptions,
+    "frame" | "titleBarStyle" | "trafficLightPosition"
+  > =
+    args.platform === "macos"
+      ? {
+          frame: false,
+          titleBarStyle: "hiddenInset",
+          trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
+        }
+      : {};
+
   return {
-    frame: false,
     height: args.bounds.height,
     icon: args.icon,
     minHeight: MIN_WINDOW_HEIGHT,
     minWidth: MIN_WINDOW_WIDTH,
     show: false,
     title: "bb",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
+    ...macOsWindowOptions,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -189,10 +203,12 @@ function createWindowOptions(
 }
 
 async function loadUrlIntoWindow(args: LoadUrlIntoWindowArgs): Promise<void> {
-  // Native macOS traffic lights do not scale with Chromium page zoom, so reset
-  // app-window zoom before loading the renderer chrome that visually aligns to
-  // them. This also clears stale per-origin zoom persisted by Electron sessions.
-  args.browserWindow.webContents.setZoomFactor(1);
+  if (args.platform === "macos") {
+    // Native macOS traffic lights do not scale with Chromium page zoom, so reset
+    // app-window zoom before loading the renderer chrome that visually aligns to
+    // them. This also clears stale per-origin zoom persisted by Electron sessions.
+    args.browserWindow.webContents.setZoomFactor(1);
+  }
   try {
     await args.browserWindow.loadURL(args.url);
   } catch (error) {
@@ -231,6 +247,7 @@ export function createDesktopWindowFactory(
         createWindowOptions({
           bounds: restoredState.bounds,
           icon: args.icon,
+          platform: args.platform,
           preloadPath: args.preloadPath,
         }),
       );
@@ -265,6 +282,7 @@ export function createDesktopWindowFactory(
       if (createArgs.initialUrl !== null) {
         await loadUrlIntoWindow({
           browserWindow,
+          platform: args.platform,
           url: createArgs.initialUrl,
         });
       }
@@ -302,13 +320,14 @@ export function createDesktopWindowFactory(
     return restoredWindows;
   }
 
-  async function loadUrl(args: LoadDesktopWindowsUrlArgs): Promise<void> {
+  async function loadUrl(loadArgs: LoadDesktopWindowsUrlArgs): Promise<void> {
     const loadPromises: Promise<void>[] = [];
     for (const browserWindow of activeWindows.values()) {
       loadPromises.push(
         loadUrlIntoWindow({
           browserWindow,
-          url: args.url,
+          platform: args.platform,
+          url: loadArgs.url,
         }),
       );
     }
@@ -335,6 +354,7 @@ export function createDesktopWindowFactory(
       }
       await loadUrlIntoWindow({
         browserWindow,
+        platform: args.platform,
         url: loadArgs.url,
       });
       browserWindow.focus();

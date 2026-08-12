@@ -8,6 +8,7 @@ import {
 } from "@bb/desktop-contract";
 import {
   createDesktopReleaseConfig,
+  resolveDesktopUpdateMetadataFileName,
   resolveDesktopReleaseChannel,
 } from "./desktop-release-channel.mjs";
 
@@ -15,10 +16,15 @@ const packageRoot = process.cwd();
 const packageJsonPath = resolve(packageRoot, "package.json");
 const releaseChannel = resolveDesktopReleaseChannel(process.env);
 const releaseConfig = createDesktopReleaseConfig(releaseChannel);
+const desktopPlatform = resolveDesktopPlatform(process.platform);
+const updateMetadataFileName = resolveDesktopUpdateMetadataFileName(
+  releaseChannel,
+  desktopPlatform === "macos" ? "darwin" : "linux",
+);
 const updateMetadataPath = resolve(
   packageRoot,
   "release",
-  releaseConfig.updateMetadataFileName,
+  updateMetadataFileName,
 );
 const desktopVersionFeedPath = resolve(
   packageRoot,
@@ -30,15 +36,15 @@ const packageJsonSchema = z.object({
   version: z.string().min(1),
 });
 
-const latestMacFileSchema = z.object({
+const updateMetadataFileSchema = z.object({
   url: z.string().min(1),
   sha512: z.string().min(1),
   size: z.number().int().nonnegative(),
 });
 
-const latestMacSchema = z.object({
+const updateMetadataSchema = z.object({
   version: z.string().min(1),
-  files: z.array(latestMacFileSchema).min(1),
+  files: z.array(updateMetadataFileSchema).min(1),
   path: z.string().min(1),
   sha512: z.string().min(1),
   releaseDate: z.iso.datetime(),
@@ -51,13 +57,25 @@ function parseJson(text: string): unknown {
 const packageJson = packageJsonSchema.parse(
   parseJson(await readFile(packageJsonPath, "utf8")),
 );
-const updateMetadata = latestMacSchema.parse(
+const updateMetadata = updateMetadataSchema.parse(
   parseYaml(await readFile(updateMetadataPath, "utf8")),
 );
 
+function resolveDesktopPlatform(platform: NodeJS.Platform): "linux" | "macos" {
+  if (platform === "linux") {
+    return "linux";
+  }
+  if (platform === "darwin") {
+    return "macos";
+  }
+  throw new Error(
+    `Unsupported desktop platform for version feed generation: ${platform}`,
+  );
+}
+
 if (updateMetadata.version !== packageJson.version) {
   throw new Error(
-    `${releaseConfig.updateMetadataFileName} version ${updateMetadata.version} did not match apps/desktop/package.json version ${packageJson.version}`,
+    `${updateMetadataFileName} version ${updateMetadata.version} did not match apps/desktop/package.json version ${packageJson.version}`,
   );
 }
 
@@ -66,7 +84,7 @@ const desktopVersionFeed: BbDesktopVersionFeed = {
   files: updateMetadata.files,
   minimumSystemVersion: null,
   path: updateMetadata.path,
-  platform: "macos",
+  platform: desktopPlatform,
   releaseDate: updateMetadata.releaseDate,
   releaseName: `${releaseConfig.applicationName} desktop ${packageJson.version}`,
   releaseNotes: null,

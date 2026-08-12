@@ -254,6 +254,7 @@ describe("desktop window factory", () => {
         return false;
       },
       openExternalUrl() {},
+      platform: "macos",
       preloadPath: "/tmp/preload.cjs",
       userDataPath: tempDir.path,
     });
@@ -319,6 +320,53 @@ describe("desktop window factory", () => {
     ]);
   });
 
+  it("keeps native window controls on Linux", async () => {
+    const tempDir = await createTempDir();
+    const createdWindows: FakeDesktopWindow[] = [];
+    const factory = createDesktopWindowFactory({
+      browserWindowCreator: {
+        create(options) {
+          const browserWindow = new FakeDesktopWindow({ options });
+          createdWindows.push(browserWindow);
+          return browserWindow;
+        },
+      },
+      createWindowStateKey() {
+        return "linux-window";
+      },
+      displayWorkAreas: [
+        {
+          height: 900,
+          width: 1440,
+          x: 0,
+          y: 0,
+        },
+      ],
+      icon: undefined,
+      isQuitting() {
+        return false;
+      },
+      openExternalUrl() {},
+      platform: "linux",
+      preloadPath: "/tmp/preload.cjs",
+      userDataPath: tempDir.path,
+    });
+
+    await factory.createWindow({
+      initialUrl: "http://127.0.0.1:38886",
+      stateKey: null,
+    });
+
+    const window = createdWindows[0];
+    if (window === undefined) {
+      throw new Error("Expected a Linux desktop window");
+    }
+    expect(window.options).not.toHaveProperty("frame");
+    expect(window.options).not.toHaveProperty("titleBarStyle");
+    expect(window.options).not.toHaveProperty("trafficLightPosition");
+    expect(window.webContents.zoomFactors).toEqual([]);
+  });
+
   it("allocates distinct state keys for concurrent implicit windows", async () => {
     const tempDir = await createTempDir();
     const createdWindows: FakeDesktopWindow[] = [];
@@ -348,6 +396,7 @@ describe("desktop window factory", () => {
         return false;
       },
       openExternalUrl() {},
+      platform: "macos",
       preloadPath: "/tmp/preload.cjs",
       userDataPath: tempDir.path,
     });
@@ -407,6 +456,7 @@ describe("desktop window factory", () => {
       openExternalUrl({ url }) {
         openedExternalUrls.push(url);
       },
+      platform: "macos",
       preloadPath: "/tmp/preload.cjs",
       userDataPath: tempDir.path,
     });
@@ -459,6 +509,7 @@ describe("desktop window factory", () => {
         return false;
       },
       openExternalUrl() {},
+      platform: "macos",
       preloadPath: "/tmp/preload.cjs",
       userDataPath: tempDir.path,
     });
@@ -515,6 +566,7 @@ describe("desktop window factory", () => {
         return false;
       },
       openExternalUrl() {},
+      platform: "macos",
       preloadPath: "/tmp/preload.cjs",
       userDataPath: tempDir.path,
     });
@@ -574,6 +626,7 @@ describe("desktop window factory", () => {
         return false;
       },
       openExternalUrl() {},
+      platform: "macos",
       preloadPath: "/tmp/preload.cjs",
       userDataPath: tempDir.path,
     });

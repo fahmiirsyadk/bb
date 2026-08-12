@@ -41,6 +41,20 @@ describe("desktop chrome geometry", () => {
     ).toBe(false);
   });
 
+  it("does not reserve macOS traffic-light space for Linux desktop shells", () => {
+    const desktopApi = createBbDesktopApi({
+      ...desktopInfo,
+      platform: "linux",
+    });
+
+    expect(
+      shouldReserveMacosTrafficLights({
+        desktopInfo: desktopApi,
+        windowState: { isFullScreen: false },
+      }),
+    ).toBe(false);
+  });
+
   // The traffic-light reserve is px geometry, not typography. Both the page
   // header and the collapsed split-workspace panel land their leading content
   // at the same absolute x (just right of the pinned sidebar trigger) from the

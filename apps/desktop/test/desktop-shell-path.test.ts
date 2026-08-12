@@ -114,6 +114,23 @@ describe("desktop shell PATH loading", () => {
     expect(warningLogger.warnings).toEqual([]);
   });
 
+  it("skips macOS login-shell PATH loading on Linux", () => {
+    const env: NodeJS.ProcessEnv = { PATH: "/usr/bin:/bin" };
+    const warningLogger = createWarningLogger();
+
+    const result = ensurePackagedMacOsUserShellPath({
+      env,
+      isPackaged: true,
+      logger: warningLogger.logger,
+      platform: "linux",
+      spawnLoginShellPath: failIfSpawned(),
+    });
+
+    expect(result).toEqual({ kind: "skipped", reason: "non-darwin" });
+    expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(warningLogger.warnings).toEqual([]);
+  });
+
   it("falls back to the inherited PATH when the shell spawn fails", () => {
     const env: NodeJS.ProcessEnv = { PATH: "/usr/bin:/bin" };
     const fakeSpawn = createFakeSpawn({

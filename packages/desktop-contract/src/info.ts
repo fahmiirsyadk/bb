@@ -4,6 +4,9 @@ import type { AppCommandId } from "@bb/domain";
 
 const isoUtcDateTimeSchema = z.iso.datetime();
 
+export const bbDesktopPlatformSchema = z.enum(["linux", "macos"]);
+export type BbDesktopPlatform = z.infer<typeof bbDesktopPlatformSchema>;
+
 export const bbDesktopDownloadStateSchema = z.enum([
   "idle",
   "downloading",
@@ -24,7 +27,7 @@ export const bbDesktopInfoSchema = z.object({
   lastCheckedAt: isoUtcDateTimeSchema.nullable(),
   latestVersion: z.string().min(1).nullable(),
   pendingVersion: z.string().min(1).nullable(),
-  platform: z.literal("macos"),
+  platform: bbDesktopPlatformSchema,
   updateAvailable: z.boolean(),
   updateDownloaded: z.boolean(),
   version: z.string().min(1),

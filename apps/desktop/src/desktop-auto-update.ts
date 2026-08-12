@@ -18,6 +18,7 @@ import {
   DESKTOP_AUTO_UPDATE_FEED_CONFIG,
   type DesktopAutoUpdateFeedConfig,
 } from "./desktop-update-provider.js";
+import type { DesktopPlatform } from "./types.js";
 
 export interface DesktopAutoUpdateLogger {
   error(message: string): void;
@@ -61,12 +62,14 @@ export interface CreateDesktopAutoUpdateServiceArgs {
   forceDevUpdateConfig: boolean;
   logger?: DesktopAutoUpdateLogger;
   now?: () => number;
+  platform: DesktopPlatform;
   updater: DesktopAutoUpdaterAdapter;
 }
 
 export interface ShouldEnableDesktopAutoUpdateArgs {
   env: NodeJS.ProcessEnv;
   isPackaged: boolean;
+  platform: DesktopPlatform;
 }
 
 interface ApplyUpdateAvailableArgs {
@@ -90,13 +93,16 @@ export interface DesktopAutoUpdateService extends DesktopUpdateService {
   installUpdate(): void;
 }
 
-function createBaseInfo(currentVersion: string): BbDesktopInfo {
+function createBaseInfo(
+  currentVersion: string,
+  platform: DesktopPlatform,
+): BbDesktopInfo {
   return {
     downloadState: "idle",
     lastCheckedAt: null,
     latestVersion: null,
     pendingVersion: null,
-    platform: "macos",
+    platform,
     updateAvailable: false,
     updateDownloaded: false,
     version: currentVersion,
@@ -146,6 +152,9 @@ function formatCheckedAt(now: () => number): string {
 export function shouldEnableDesktopAutoUpdate(
   args: ShouldEnableDesktopAutoUpdateArgs,
 ): boolean {
+  if (args.platform === "linux" && args.env.APPIMAGE === undefined) {
+    return false;
+  }
   return args.isPackaged || args.env.BB_DESKTOP_AUTO_UPDATE === "1";
 }
 
@@ -200,7 +209,7 @@ export function createDesktopAutoUpdateService(
   const logger = args.logger ?? createDefaultLogger();
   const now = args.now ?? (() => Date.now());
 
-  let currentInfo = createBaseInfo(args.currentVersion);
+  let currentInfo = createBaseInfo(args.currentVersion, args.platform);
   let inflight: Promise<BbDesktopInfo> | null = null;
   let intervalHandle: DesktopUpdateIntervalHandle | null = null;
   let lastAttemptedAt: number | null = null;

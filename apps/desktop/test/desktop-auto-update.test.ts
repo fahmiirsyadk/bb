@@ -218,6 +218,7 @@ describe("desktop auto-update service", () => {
       forceDevUpdateConfig: false,
       logger: createLogger(messages),
       now: () => Date.parse(checkedAt),
+      platform: "macos",
       updater,
     });
 
@@ -237,6 +238,7 @@ describe("desktop auto-update service", () => {
       forceDevUpdateConfig: false,
       logger: createLogger(messages),
       now: () => Date.parse(checkedAt),
+      platform: "macos",
       updater,
     });
 
@@ -284,6 +286,7 @@ describe("desktop auto-update service", () => {
       forceDevUpdateConfig: false,
       logger: createLogger(createLoggerMessages()),
       now: () => Date.parse(checkedAt),
+      platform: "macos",
       updater,
     });
 
@@ -311,6 +314,7 @@ describe("desktop auto-update service", () => {
       forceDevUpdateConfig: false,
       logger: createLogger(messages),
       now: () => Date.parse(checkedAt),
+      platform: "macos",
       updater,
     });
 
@@ -344,6 +348,7 @@ describe("desktop auto-update service", () => {
       forceDevUpdateConfig: false,
       logger: createLogger(createLoggerMessages()),
       now: () => Date.parse(checkedAt),
+      platform: "macos",
       updater,
     });
 
@@ -367,6 +372,7 @@ describe("desktop auto-update service", () => {
     const enabled = shouldEnableDesktopAutoUpdate({
       env: {},
       isPackaged: false,
+      platform: "macos",
     });
     const service = createDesktopAutoUpdateService({
       currentVersion: "0.0.1",
@@ -374,6 +380,7 @@ describe("desktop auto-update service", () => {
       forceDevUpdateConfig: false,
       logger: createLogger(createLoggerMessages()),
       now: () => Date.parse(checkedAt),
+      platform: "macos",
       updater,
     });
 
@@ -391,7 +398,32 @@ describe("desktop auto-update service", () => {
       shouldEnableDesktopAutoUpdate({
         env: { BB_DESKTOP_AUTO_UPDATE: "1" },
         isPackaged: false,
+        platform: "macos",
       }),
     ).toBe(true);
+  });
+
+  it("only enables native Linux updates from an AppImage runtime", () => {
+    expect(
+      shouldEnableDesktopAutoUpdate({
+        env: {},
+        isPackaged: true,
+        platform: "linux",
+      }),
+    ).toBe(false);
+    expect(
+      shouldEnableDesktopAutoUpdate({
+        env: { APPIMAGE: "/tmp/bb.AppImage" },
+        isPackaged: true,
+        platform: "linux",
+      }),
+    ).toBe(true);
+    expect(
+      shouldEnableDesktopAutoUpdate({
+        env: { BB_DESKTOP_AUTO_UPDATE: "1" },
+        isPackaged: false,
+        platform: "linux",
+      }),
+    ).toBe(false);
   });
 });

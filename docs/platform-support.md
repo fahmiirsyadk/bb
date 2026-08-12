@@ -30,6 +30,47 @@ WSL2 remains a supported Linux host path:
   installed inside WSL2
 - local project paths use Linux-style absolute paths from inside WSL2
 
+## Desktop client support
+
+The supported Linux and WSL2 product path is the cross-platform `bb-app`
+runtime: it starts the server and host daemon and serves the UI in a browser.
+The Electron desktop shell in [`apps/desktop/`](../apps/desktop/) has source and
+packaging paths for macOS and Linux, with a deliberately limited artifact
+matrix:
+
+| Platform | Configured architecture | Artifacts           | Channel metadata                         |
+| -------- | ----------------------- | ------------------- | ---------------------------------------- |
+| macOS    | arm64 only              | `.dmg`, `.zip`      | `latest-mac.yml` / `nightly-mac.yml`     |
+| Linux    | x64 only                | `.AppImage`, `.deb` | `latest-linux.yml` / `nightly-linux.yml` |
+| Windows  | none                    | —                   | —                                        |
+
+There is no `.rpm` target. The native-module preparation code recognizes both
+Linux arm64 and Linux x64, but the electron-builder target is x64 only; Linux
+arm64 is not a published or configured installer architecture. Likewise,
+macOS x64 is not a configured installer target even though some native
+prebuilds may exist for it.
+
+All local desktop output is written to `apps/desktop/release/`. Stable Linux
+x64 names are `bb-<version>-x86_64.AppImage` and
+`bb-<version>-amd64.deb`; nightly names add the `bb-nightly-` prefix. The
+architecture spelling comes from electron-builder (`x86_64` for AppImage and
+`amd64` for Debian), not from a broader support claim.
+
+The platform-aware `desktop-version.json` feed is generated from the matching
+macOS or Linux metadata and reports `platform: "macos"` or `platform: "linux"`.
+Packaged Linux AppImages may use the native Electron updater when the AppImage
+runtime is present. `.deb` installations do not enable that updater and must
+be updated by installing a newer package.
+
+The manually dispatched Build Desktop workflow runs macOS arm64 and Ubuntu
+Linux x64 jobs. The Linux job packages and smoke-tests the desktop shell, then
+uploads the AppImage, `.deb`, matching metadata, and `desktop-version.json` as
+the `bb-desktop-linux-x64` workflow artifact. Stable public desktop releases
+currently publish macOS assets only, so Linux installer downloads are not yet
+attached to the public release feed. Linux users who need the supported product
+path should run `npx bb-app@latest` and open `http://localhost:38886`, or use
+`pnpm dev` for a source checkout.
+
 ### Native Windows expectations
 
 - native Windows PowerShell uses the per-user host-daemon installer exposed as
@@ -91,6 +132,29 @@ WSL2 remains a supported Linux host path:
 - native Windows terminal and shell-hook flows (the host daemon itself is
   supported; these surfaces remain best-effort)
 
+The `@bb/desktop` packaged smoke test is platform-specific: it launches the
+packaged executable for the current host and must run on that host:
+
+```bash
+pnpm exec turbo run smoke:packaged --filter=@bb/desktop --force
+```
+
+On Linux CI the same command runs under `xvfb-run` against the unpacked Linux
+desktop executable. The corresponding supported Linux/WSL2 runtime smoke is the
+`bb-app` tarball check:
+
+```bash
+pnpm exec turbo run smoke:tarball --filter=bb-app --force
+```
+
+For a local Linux check, build on Linux x64 and run
+`pnpm exec turbo run start --filter=@bb/desktop` (which launches the unpacked
+executable or AppImage), or launch the generated AppImage directly. `.deb`
+validation is an install-and-launch check on a Debian-family system. On Void
+Linux, use the AppImage for the native launch because `xbps` does not install
+Debian packages; the `.deb` can be inspected with `ar`/`tar` or tested on a
+Debian-family machine.
+
 ## Dependency Policy
 
 We are standardizing on a small set of cross-platform packages:
@@ -150,8 +214,9 @@ rebuild the native dependency, for example `npm rebuild better-sqlite3`.
 
 ## CI And Validation
 
-- GitHub Actions uses Ubuntu as the required support gate for build,
-  typecheck, lint, test, and Linux smoke coverage.
+- GitHub Actions uses Ubuntu as the required support gate for build, typecheck,
+  lint, test, and Linux `bb-app` package smoke coverage; this is not a Linux
+  Electron desktop build.
 - Full build, typecheck, lint, and test checks run on Ubuntu with Node.js 22
   only.
 - Pull requests run the `bb-app` tarball smoke on Ubuntu and macOS with Node.js
@@ -165,3 +230,8 @@ rebuild the native dependency, for example `npm rebuild better-sqlite3`.
   required PR checks.
 - Native Windows CI is intentionally not required yet; the installer and
   platform contract are covered by Linux-side contract and route tests.
+- The separate `Build Desktop` workflow runs a macOS arm64 job and an Ubuntu
+  Linux x64 job. The macOS job verifies an arm64 runner and publishes the
+  signed public desktop release when enabled; the Linux job packages and
+  packaged-smoke-tests the x64 desktop artifacts as a workflow artifact. The
+  nightly desktop job currently has the macOS arm64 limitation.

@@ -1,7 +1,103 @@
 # @bb/desktop
 
-macOS Electron shell for bb. The desktop app loads the existing bb web UI and
-uses the packaged `bb-app` launcher for server and host-daemon lifecycle.
+Cross-platform Electron shell for bb. The desktop app loads the existing bb web
+UI and uses the packaged `bb-app` launcher for server and host-daemon lifecycle.
+
+The checked-in desktop target matrix is intentionally narrow:
+
+- macOS: arm64 `.dmg` and `.zip` installers
+- Linux: x64 AppImage and Debian `.deb` packages
+- Windows: no Electron target
+- Linux `.rpm`: not configured
+
+The source bridge, contracts, native-module preparation, and update-feed
+generation support both `macos` and `linux`. The configured Linux installer
+target is x64 only; native-module preparation also recognizes Linux arm64 for
+source or explicitly selected packaging work, but there is no arm64 Linux
+artifact target. The manually dispatched Build Desktop workflow runs both the
+macOS arm64 and Ubuntu Linux x64 jobs. Linux packages, metadata, and packaged
+smoke output are uploaded as the `bb-desktop-linux-x64` workflow artifact;
+stable public desktop releases currently publish only macOS assets.
+
+## Linux and WSL2 launch path
+
+On Linux or WSL2, launch the supported runtime and open its browser UI:
+
+```bash
+npx bb-app@latest
+```
+
+Then open `http://localhost:38886`. For source development, use `pnpm dev` and
+open the URL printed by the launcher. These paths start the server and local
+host daemon without requiring Electron.
+
+To develop the Linux Electron shell itself, use the normal source loop from a
+Linux checkout:
+
+```bash
+pnpm dev:desktop
+```
+
+or run the package task directly:
+
+```bash
+pnpm exec turbo run dev --filter=@bb/desktop
+```
+
+The source loop can run on Linux arm64 or x64 when the host has the matching
+Electron/native-module dependencies. Packaged Linux output remains x64 only.
+
+## Build on Void Linux
+
+Void Linux can build the configured Linux x64 desktop artifacts. Install the
+Electron runtime libraries, native-build toolchain, and optional headless
+display with `xbps`:
+
+```bash
+sudo xbps-install -S \
+  base-devel git curl python3 pkgconf \
+  gtk+3-devel libnotify-devel nss-devel \
+  libXScrnSaver-devel libXtst-devel libsecret-devel \
+  libayatana-appindicator-devel xdg-utils fuse xorg-server-xvfb
+```
+
+Use Node.js 22.19 or newer and pnpm 9.15.0, then install and build from the
+repository root:
+
+```bash
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
+pnpm install --frozen-lockfile
+pnpm exec turbo run typecheck --filter=@bb/desktop --filter=bb-app --output-logs=new-only
+pnpm exec turbo run build --filter=@bb/desktop --force --output-logs=new-only
+```
+
+Create the unpacked directory for a launch/smoke check, then create the
+AppImage and Debian package. `--publish never` keeps a local build offline
+from release publication:
+
+```bash
+node apps/desktop/scripts/run-electron-builder.mjs \
+  --linux --x64 --dir --publish never
+pnpm exec turbo run smoke:packaged --filter=@bb/desktop --force
+
+node apps/desktop/scripts/run-electron-builder.mjs \
+  --linux AppImage deb --x64 --publish never
+pnpm --dir apps/desktop run desktop:version-feed
+```
+
+If the Void session has no graphical display, run the packaged smoke under the
+headless X server installed above:
+
+```bash
+xvfb-run -a pnpm exec turbo run smoke:packaged --filter=@bb/desktop --force
+```
+
+The outputs are in `apps/desktop/release/`: `bb-<version>-x86_64.AppImage`,
+`bb-<version>-amd64.deb`, `latest-linux.yml`, and `desktop-version.json`. Void's
+`xbps` does not install Debian packages, so use the AppImage for a native Void
+launch. Validate the `.deb` archive with `ar`/`tar`, or install it on a Debian
+family system for an installation smoke test.
 
 ## Development
 
@@ -51,6 +147,9 @@ Node runtime:
 pnpm exec turbo run start --filter=@bb/desktop
 ```
 
+The `start` helper supports both macOS and Linux. On Linux it launches the
+`linux-unpacked` executable when present, or a generated AppImage.
+
 Electron is pinned to `41.7.0`, the highest stable line verified to rebuild the
 packaged native modules with the current dependency set. Electron 42.2.0 was
 tested, but `better-sqlite3@12.10.0` does not compile against Electron ABI 146.
@@ -65,17 +164,82 @@ pnpm exec turbo run test --filter=@bb/desktop --filter=bb-app --force
 pnpm exec turbo run dev --filter=@bb/desktop
 ```
 
+For the supported Linux/WSL2 runtime smoke, use the npm tarball path:
+
+```bash
+pnpm exec turbo run smoke:tarball --filter=bb-app --force
+```
+
+`smoke:packaged` launches the packaged desktop executable for the host platform
+and must run on that platform. macOS uses the `.app` bundle; Linux uses the
+unpacked executable or AppImage. The Ubuntu workflow runs the Linux smoke under
+`xvfb-run` before producing the AppImage and `.deb` artifacts.
+
 ## Packaging
 
 ```bash
 pnpm exec turbo run desktop:build --filter=@bb/desktop
-pnpm exec turbo run smoke:packaged --filter=@bb/desktop
 ```
 
-Artifacts are written under `apps/desktop/release/`. The desktop build is
-macOS-only and Apple Silicon arm64-only. Without signing secrets, local builds
-sign with a code-signing identity auto-discovered from the keychain and skip
-notarization. A valid signature matters even for local builds: macOS
+Run the build on the target OS. The configured macOS target is arm64; the
+configured Linux targets are x64. Artifacts are written under
+`apps/desktop/release/`. For a stable version `<version>`, the installer
+artifacts are named:
+
+- `bb-<version>-arm64.dmg`
+- `bb-<version>-arm64.zip`
+- the corresponding `.blockmap` files used for differential updates
+
+On Linux x64, the corresponding local artifacts are:
+
+- `bb-<version>-x86_64.AppImage`
+- `bb-<version>-amd64.deb`
+
+There is no `.rpm` target. The Linux artifact names use electron-builder's
+platform-specific architecture names (`x86_64` for AppImage and `amd64` for
+Debian), while the target policy remains x64.
+
+The native update metadata is platform-specific: `latest-mac.yml` on macOS and
+`latest-linux.yml` on Linux. After packaging, generate the renderer-facing feed
+with:
+
+```bash
+pnpm --dir apps/desktop run desktop:version-feed
+```
+
+That writes `apps/desktop/release/desktop-version.json`; its `platform` is
+`macos` or `linux` according to the build host, and its file information is
+derived from the matching platform metadata. Nightly builds use the same
+directory and target matrix, with:
+
+- macOS: `bb-nightly-<version>-arm64.dmg`,
+  `bb-nightly-<version>-arm64.zip`, and `nightly-mac.yml`
+- Linux x64: `bb-nightly-<version>-x86_64.AppImage`,
+  `bb-nightly-<version>-amd64.deb`, and `nightly-linux.yml`
+
+The manually dispatched workflow uploads both platform outputs as workflow
+artifacts. Stable public releases currently attach only the macOS metadata and
+installers; Linux metadata and installers are not public release assets yet.
+
+For a manual Linux x64 launch check after packaging:
+
+```bash
+chmod +x apps/desktop/release/bb-<version>-x86_64.AppImage
+./apps/desktop/release/bb-<version>-x86_64.AppImage
+```
+
+On a Debian-family system, the `.deb` can be installed with `apt`; Void users
+should run the AppImage because `xbps` does not consume Debian packages.
+
+The repository's packaged-app helper supports macOS and Linux. The Linux CI
+smoke launches the unpacked executable under a virtual display; installing a
+`.deb` remains a manual Debian-family install check. The unpacked Linux launch
+can also be exercised locally with
+`pnpm exec turbo run start --filter=@bb/desktop`.
+
+Without signing secrets, local builds sign with a code-signing identity
+auto-discovered from the keychain and skip notarization. A valid signature
+matters even for local builds: macOS
 provenance-tracks unsigned apps, forcing syspolicyd to evaluate every exec in
 the app's process tree, which can stall process launches system-wide. On
 machines with no keychain identity (or with `CSC_IDENTITY_AUTO_DISCOVERY=false`,
@@ -105,6 +269,16 @@ release; use `scripts/bump-version.mjs` so both files move together.
 The desktop release tag uses the locked version: `desktop-v<version>` for
 immutable releases and `desktop-latest` for the moving pointer.
 
+Stable signed macOS artifacts are uploaded to both the immutable
+`desktop-v<version>` release and the moving `desktop-latest` release. The
+moving release is the stable download and update location; public release
+publication currently puts macOS assets there only. The manually dispatched
+workflow also uploads Linux packages and metadata as `bb-desktop-linux-x64`,
+but those files are not attached to the public releases yet. If the
+signing/notarization gate is closed, the workflow
+publishes macOS `desktop-version.json` metadata without the unsigned installer
+artifacts.
+
 ## Nightly channel
 
 The scheduled `publish-bb-app.yml` workflow runs from `main` every day at
@@ -122,8 +296,15 @@ The nightly desktop is a separate installation:
 - product name: `bb Nightly`
 - bundle identifier: `dev.bb.desktop.nightly`
 - app/update release: `desktop-nightly`
-- update metadata: `nightly-mac.yml`
+- macOS update metadata: `nightly-mac.yml`
+- Linux update metadata: `nightly-linux.yml`
 - icon: `assets/icon-nightly.icns` and `assets/icon-nightly.png`
+
+Its macOS installer names are `bb-nightly-<version>-arm64.dmg` and
+`bb-nightly-<version>-arm64.zip`. Local Linux x64 packaging uses
+`bb-nightly-<version>-x86_64.AppImage` and
+`bb-nightly-<version>-amd64.deb`. The nightly release workflow currently
+publishes macOS arm64 only.
 
 Download it from
 [`desktop-nightly`](https://github.com/get-bb/bb/releases/tag/desktop-nightly)
@@ -171,19 +352,40 @@ produce unsigned or signed-but-not-notarized artifacts.
 
 ## Auto-update
 
-The renderer update toast keeps using `desktop-version.json` as the lightweight
-feature surface. The installer path uses `electron-updater` against the same
-`desktop-latest` release asset directory and reads `latest-mac.yml`. These
-checks run in parallel on launch, hourly, and when the app becomes active: the
-JSON feed can show "update available" even when CI has published metadata only,
-while the Electron updater only flips the toast to "ready to install" after a
-signed update has actually downloaded. Local dev builds skip Electron auto-update
-unless `BB_DESKTOP_AUTO_UPDATE=1` is set.
+The desktop app has two update surfaces:
+
+- The renderer update indicator reads `desktop-version.json` from
+  `https://github.com/get-bb/bb/releases/download/desktop-latest/desktop-version.json`
+  for stable, or the equivalent `desktop-nightly` URL for nightly. This is the
+  lightweight version/info feed generated from the channel's platform-specific
+  metadata and includes `platform: "macos"` or `platform: "linux"`.
+- `electron-updater` uses the generic GitHub release directory and reads
+  `latest-mac.yml`/`nightly-mac.yml` on macOS or
+  `latest-linux.yml`/`nightly-linux.yml` on Linux before downloading and
+  installing an update.
+
+Packaged builds check these surfaces on launch, hourly, and when the app becomes
+active. The JSON feed can show "update available" even when CI has published
+metadata only, while the Electron updater only reports an installable update
+after a signed update has downloaded. In source development, the lightweight
+feed is opt-in with `BB_DESKTOP_VERSION_CHECK=1`. Native auto-update is
+opt-in with `BB_DESKTOP_AUTO_UPDATE=1` on macOS; Linux requires the AppImage
+runtime as described below. `BB_DESKTOP_VERSION_FEED_URL` can point the
+lightweight check at a local test feed; it does not create a Linux update
+channel.
 
 `bb Nightly` follows the equivalent isolated `desktop-nightly` release and
-`nightly-mac.yml`; it never reads or moves the stable feed. The scheduled
-workflow requires the complete signing/notarization secret set before
-publishing nightly desktop assets.
+platform-specific nightly metadata; it never reads or moves the stable feed.
+The scheduled workflow requires the complete signing/notarization secret set
+before publishing nightly macOS desktop assets.
+
+Native Electron auto-update is enabled for packaged Linux AppImages, but not
+for `.deb` installs (the runtime checks for the AppImage environment before
+enabling `electron-updater`). A `.deb` installation must be updated by
+installing a newer package. The current public release feeds contain macOS
+assets only; Linux feed metadata is generated and uploaded with the
+`bb-desktop-linux-x64` workflow artifact, pending public Linux release
+publication.
 
 To verify a downloaded or unpacked build:
 
@@ -194,11 +396,23 @@ codesign --verify --deep --strict --verbose=2 /path/to/bb.app
 
 ## Debugging
 
+On Linux or WSL2, debug either the Electron source loop with
+`BB_DESKTOP_OPEN_DEVTOOLS=1 pnpm dev:desktop` or the supported browser runtime
+with `npx bb-app@latest`/`pnpm dev`. Server and host-daemon logs are under
+`~/.bb/logs/` or `$BB_DATA_DIR/logs/` when `BB_DATA_DIR` is set.
+
 Use the View menu to toggle DevTools. To open them automatically on launch, set
 `BB_DESKTOP_OPEN_DEVTOOLS=1`:
 
 ```bash
 BB_DESKTOP_OPEN_DEVTOOLS=1 apps/desktop/release/mac-arm64/bb.app/Contents/MacOS/bb
+```
+
+For a locally built Linux x64 AppImage, use the same override when launching
+the artifact directly:
+
+```bash
+BB_DESKTOP_OPEN_DEVTOOLS=1 ./apps/desktop/release/bb-<version>-x86_64.AppImage
 ```
 
 When the desktop app spawns `bb-app`, server and daemon logs land under

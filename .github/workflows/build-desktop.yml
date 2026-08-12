@@ -257,3 +257,95 @@ jobs:
             echo "- release binary upload enabled: ${PUBLISH_BINARIES}"
             echo "- desktop feed URL: https://github.com/get-bb/bb/releases/download/desktop-latest/desktop-version.json"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  linux:
+    name: Ubuntu x64 desktop artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Typecheck desktop and launcher
+        run: pnpm exec turbo run typecheck --filter=@bb/desktop --filter=bb-app --output-logs=new-only
+
+      - name: Build desktop
+        run: pnpm exec turbo run build --filter=@bb/desktop --output-logs=new-only
+
+      - name: Test desktop and launcher
+        run: pnpm exec turbo run test --filter=@bb/desktop --filter=bb-app --force --output-logs=new-only
+
+      - name: Verify Linux smoke prerequisites
+        run: command -v xvfb-run
+
+      - name: Package Linux directory for smoke
+        run: node apps/desktop/scripts/run-electron-builder.mjs --linux --x64 --dir --publish never
+
+      - name: Verify Linux smoke directory
+        run: test -x apps/desktop/release/linux-unpacked/bb
+
+      - name: Smoke test Linux packaged desktop app
+        run: xvfb-run -a pnpm exec turbo run smoke:packaged --filter=@bb/desktop --force --output-logs=new-only
+
+      - name: Package Linux AppImage and deb
+        run: node apps/desktop/scripts/run-electron-builder.mjs --linux AppImage deb --x64 --publish never
+
+      - name: Generate Linux desktop version feed
+        run: pnpm --dir apps/desktop run desktop:version-feed
+
+      - name: Verify Linux release metadata and artifacts
+        run: |
+          set -euo pipefail
+
+          test -s apps/desktop/release/latest-linux.yml
+          test -s apps/desktop/release/desktop-version.json
+
+          appimages=(apps/desktop/release/*.AppImage)
+          if [[ "${#appimages[@]}" -eq 0 || ! -x "${appimages[0]}" ]]; then
+            echo "::error::Linux AppImage artifact is unavailable under apps/desktop/release"
+            exit 1
+          fi
+
+          debs=(apps/desktop/release/*.deb)
+          if [[ "${#debs[@]}" -eq 0 || ! -s "${debs[0]}" ]]; then
+            echo "::error::Linux deb artifact is unavailable under apps/desktop/release"
+            exit 1
+          fi
+
+      - name: Upload Linux workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bb-desktop-linux-x64
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/latest-linux.yml
+            apps/desktop/release/desktop-version.json
+          if-no-files-found: error
+
+      - name: Summarize
+        run: |
+          {
+            echo "## bb desktop Linux artifacts"
+            echo
+            echo "- x64 Linux linux-unpacked directory smoke-tested under xvfb"
+            echo "- x64 Linux AppImage and .deb, latest-linux.yml, and desktop-version.json uploaded as workflow artifacts"
+          } >> "$GITHUB_STEP_SUMMARY"
