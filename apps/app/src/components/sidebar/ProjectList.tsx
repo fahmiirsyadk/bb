@@ -509,7 +509,7 @@ function getSectionMutationErrorMessage(
   return getMutationErrorMessage({ error, fallbackMessage });
 }
 
-export function ProjectListSectionIconButton({
+function ProjectListSectionIconButton({
   ariaLabel,
   disabled = false,
   icon,
@@ -519,14 +519,6 @@ export function ProjectListSectionIconButton({
   const handleClick = useCallback<MouseEventHandler<HTMLButtonElement>>(
     (event) => {
       event.stopPropagation();
-      // A native or in-app picker can return focus to the element that opened
-      // it. Radix then reads that restored focus as keyboard navigation and
-      // reopens the tooltip after a pointer-triggered picker is dismissed.
-      // Drop pointer focus before opening the picker; keyboard/assistive clicks
-      // have detail=0 and retain focus for navigation.
-      if (event.detail > 0) {
-        event.currentTarget.blur();
-      }
       onClick();
     },
     [onClick],
