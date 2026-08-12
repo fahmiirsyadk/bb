@@ -88,7 +88,8 @@ tunnel is an accepted tradeoff.
 
 Each joined server gets its own daemon instance, data directory
 (`~/.bb-machines/<server-host>`, override with `BB_DATA_DIR` when running the
-installer), local API port, and launchd/systemd service. The installer persists
+installer), local API port, and a launchd, systemd, or portable background
+service. The installer persists
 the selected port in that data directory and atomically reserves it under
 `~/.bb-machines/host-daemon-ports/`, including when `BB_DATA_DIR` points
 elsewhere. Subsequent runs reuse the reservation; pass `--host-daemon-port
@@ -98,7 +99,8 @@ install's `~/.bb`. Each instance self-updates against its own server, but
 instances currently share the global `bb-app` binary, so servers running
 different bb versions on one machine can still fight over it.
 
-The installed launchd/systemd service enables `--auto-update`. If session open
+The installed launchd/systemd service, or the portable Linux supervisor,
+enables `--auto-update`. If session open
 reports a newer server protocol, the daemon downloads and globally installs the
 server artifact, then exits so the service manager restarts it. Failed attempts
 fall back to normal reconnect behavior with a persisted exponential retry
@@ -108,7 +110,10 @@ downgrades itself to an older server protocol. To opt out, remove
 `--auto-update` from
 `~/Library/LaunchAgents/app.getbb.host-daemon.<server>.plist` or
 `~/.config/systemd/user/bb-host-daemon-<server>.service`, then reload the
-service.
+service. On Linux without a systemd user manager, the installer writes a
+restartable supervisor to `~/.bb-machines/<server-host>/service/`; it keeps the
+daemon running for the current boot and can be registered with runit, OpenRC,
+or another native service manager for reboot persistence.
 
 After it connects:
 

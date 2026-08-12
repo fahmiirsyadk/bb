@@ -215,7 +215,10 @@ isolated|reuse`, or anchor with `--source-seq-end`. Permission mode inherits
   the server's exact `/install/bb-app.tgz` artifact (npm only on a 404) and
   enables daemon `--auto-update`; newer protocol mismatches update from that
   artifact with a persisted exponential retry backoff from 5 seconds to 5
-  minutes, then let launchd/systemd restart the daemon. Auto-update never
+  minutes, then let launchd/systemd or the portable Linux supervisor restart
+  the daemon. On Linux without a systemd user manager, the installer writes
+  the supervisor under the machine data directory; register it with the
+  host's native service manager if it should start after reboot. Auto-update never
   downgrades. Use `bb machine retry-update <id-or-name>` to bypass the current
   backoff after a transient failure. Remove `--auto-update` from the service
   definition and reload it to opt out. Removing a machine revokes server access

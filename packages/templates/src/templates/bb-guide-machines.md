@@ -19,14 +19,17 @@ server at `/install/bb-app.tgz`; only servers that do not implement the route
 (HTTP 404) fall back to npm. Installed launchd/systemd services pass
 `--auto-update`. On a newer server protocol mismatch, the daemon downloads that
 same artifact, installs it globally with npm, and exits for the service manager
-to restart. Failed attempts use a persisted exponential backoff that starts at
+to restart. On Linux without a systemd user manager, the installer uses a
+portable supervisor under the machine data directory instead; register that
+script with runit, OpenRC, or another native service manager for reboot
+persistence. Failed attempts use a persisted exponential backoff that starts at
 5 seconds and caps at 5 minutes. A daemon never auto-downgrades to an older
 server protocol. Use Settings → Machines or `bb machine retry-update` to bypass
 the current backoff after a transient failure.
 
-To opt out, remove `--auto-update` from the launchd plist or systemd user unit
-and reload that service. Foreground/manual `bb-app host-daemon` runs leave it off
-unless you pass `--auto-update` explicitly.
+To opt out, remove `--auto-update` from the launchd plist, systemd user unit, or
+portable supervisor and restart that service. Foreground/manual `bb-app
+host-daemon` runs leave it off unless you pass `--auto-update` explicitly.
 
   bb machine list                         List machines with ID, connection
                                           status, and relative last-seen time

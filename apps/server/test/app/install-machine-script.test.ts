@@ -239,6 +239,15 @@ afterEach(() => {
       );
       process.kill(servicePid, "SIGTERM");
     } catch {}
+    try {
+      const supervisorPid = Number(
+        readFileSync(
+          join(directory, "data/host-daemon-supervisor.pid"),
+          "utf8",
+        ),
+      );
+      process.kill(supervisorPid, "SIGTERM");
+    } catch {}
     rmSync(directory, { force: true, recursive: true });
   }
 });
@@ -645,6 +654,9 @@ fi
     writeExecutable(
       join(fixture.binDir, "systemctl"),
       `#!/bin/sh
+if [ "$*" = "--user show-environment" ]; then
+  exit 0
+fi
 printf '%s\n' "$*" >>"${join(fixture.dataDir, "systemctl.log")}"
 if [ "$*" = "--user restart bb-host-daemon-machine-getbb-app.service" ]; then
   port=$(sed -n '1p' "${join(fixture.dataDir, "host-daemon-port")}")
@@ -685,5 +697,35 @@ fi
     expect(readFileSync(join(fixture.dataDir, "systemctl.log"), "utf8")).toBe(
       "--user daemon-reload\n--user enable bb-host-daemon-machine-getbb-app.service\n--user restart bb-host-daemon-machine-getbb-app.service\n",
     );
+  });
+
+  it("starts a portable supervisor when Linux has no systemd user manager", () => {
+    const fixture = createFixture();
+    writeJoinedState(fixture);
+    writeCurlArtifactMock(fixture, 404);
+    writeEnrollingBbApp(fixture, join(fixture.dataDir, "service-invocation"));
+    writeExecutable(join(fixture.binDir, "uname"), "#!/bin/sh\necho Linux\n");
+    writeExecutable(
+      join(fixture.binDir, "systemctl"),
+      "#!/bin/sh\nexit 1\n",
+    );
+
+    const result = runScript(JOIN_ARGS, fixture);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      "No systemd user manager detected; started the bb host daemon with a portable background supervisor.",
+    );
+    const supervisor = join(
+      fixture.dataDir,
+      "service/bb-host-daemon-machine-getbb-app",
+    );
+    expect(readFileSync(supervisor, "utf8")).toContain("--auto-update");
+    expect(readFileSync(supervisor, "utf8")).toContain(
+      "--server-url 'https://machine.getbb.app'",
+    );
+    expect(
+      readFileSync(join(fixture.dataDir, "host-daemon-supervisor.pid"), "utf8"),
+    ).toMatch(/^\d+\n$/);
   });
 });

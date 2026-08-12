@@ -5,7 +5,7 @@
 ## Supported host environments
 
 - macOS persistent host
-- Linux persistent host
+- Linux persistent host, including non-systemd distributions such as Void Linux
 - Windows native persistent host (PowerShell installer)
 - Windows via Ubuntu on WSL2
 

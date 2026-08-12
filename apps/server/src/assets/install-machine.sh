@@ -488,6 +488,10 @@ systemd_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g'
 }
 
+shell_escape() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
 if [ "$platform" = darwin ]; then
   service_dir="$HOME/Library/LaunchAgents"
   service_label="app.getbb.host-daemon.$service_slug"
@@ -543,7 +547,7 @@ EOF
   echo "Installed and started launch agent: $service_file"
   echo "Host daemon local API: http://127.0.0.1:$host_daemon_port"
   echo "Uninstall: launchctl bootout gui/$(id -u) '$service_file' && rm '$service_file'"
-else
+elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
   service_dir="$HOME/.config/systemd/user"
   service_name="bb-host-daemon-$service_slug"
   service_file="$service_dir/$service_name.service"
@@ -589,4 +593,67 @@ EOF
   echo "Host daemon local API: http://127.0.0.1:$host_daemon_port"
   echo "It starts with your systemd user session."
   echo "Uninstall: systemctl --user disable --now $service_name.service && rm '$service_file' && systemctl --user daemon-reload"
+else
+  # Linux distributions without systemd (or without a running systemd user
+  # manager) still need a process supervisor. Keep the supervisor itself
+  # portable so this path works with runit, OpenRC, or a plain login shell.
+  # The generated script is also a native-supervisor-friendly entrypoint for
+  # users who want to register it with their distribution's service manager.
+  fallback_service_dir="$data_dir/service"
+  fallback_service_file="$fallback_service_dir/bb-host-daemon-$service_slug"
+  fallback_pid_file="$data_dir/host-daemon-supervisor.pid"
+  fallback_log_file="$data_dir/logs/host-daemon.log"
+  mkdir -p "$fallback_service_dir"
+
+  if [ -f "$fallback_pid_file" ]; then
+    fallback_pid=$(sed -n '1p' "$fallback_pid_file")
+    case "$fallback_pid" in
+      ''|*[!0-9]*) ;;
+      *) kill "$fallback_pid" 2>/dev/null || true ;;
+    esac
+  fi
+
+  escaped_node_bin=$(shell_escape "$node_bin")
+  escaped_bb_app=$(shell_escape "$bb_app")
+  escaped_server=$(shell_escape "$server_url")
+  escaped_data_dir=$(shell_escape "$data_dir")
+  cat >"$fallback_service_file" <<EOF
+#!/bin/sh
+set -u
+
+child_pid=
+stop_child() {
+  if [ -n "\$child_pid" ]; then
+    kill "\$child_pid" 2>/dev/null || true
+  fi
+  exit 0
+}
+trap stop_child INT TERM HUP
+
+while :; do
+  BB_DATA_DIR=$escaped_data_dir $escaped_node_bin $escaped_bb_app host-daemon \\
+    --auto-update \\
+    --host-daemon-port '$host_daemon_port' \\
+    --server-url $escaped_server &
+  child_pid=\$!
+  wait "\$child_pid" || true
+  child_pid=
+  sleep 2
+done
+EOF
+  chmod 700 "$fallback_service_file"
+  nohup "$fallback_service_file" >>"$fallback_log_file" 2>&1 </dev/null &
+  fallback_pid=$!
+  echo "$fallback_pid" >"$fallback_pid_file"
+  if ! wait_for_daemon_connection; then
+    kill "$fallback_pid" 2>/dev/null || true
+    echo "The bb host-daemon background supervisor started but did not connect to $server_url." >&2
+    echo "See $fallback_log_file for the daemon error." >&2
+    exit 1
+  fi
+  echo "No systemd user manager detected; started the bb host daemon with a portable background supervisor."
+  echo "Supervisor: $fallback_service_file"
+  echo "Host daemon local API: http://127.0.0.1:$host_daemon_port"
+  echo "The supervisor restarts the daemon after auto-updates. Register $fallback_service_file with your native service manager for reboot persistence."
+  echo "Uninstall: kill \$(cat '$fallback_pid_file') && rm '$fallback_pid_file' '$fallback_service_file'"
 fi
