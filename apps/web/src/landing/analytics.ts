@@ -31,10 +31,6 @@ export type LandingEvent =
   | {
       name: "landing_email_subscribed";
       properties: { placement: CtaPlacement };
-    }
-  | {
-      name: "landing_product_hunt_clicked";
-      properties: { placement: CtaPlacement };
     };
 
 let client: PostHog | null = null;
