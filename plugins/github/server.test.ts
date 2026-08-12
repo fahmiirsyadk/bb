@@ -550,9 +550,26 @@ describe("GitHub RPC contract", () => {
     });
 
     await githubPlugin(bb);
-    await harness.callRpc("refresh", null);
+    await expect(harness.callRpc("refresh", null)).resolves.toMatchObject({
+      repos: 2,
+      items: 2,
+      failedHosts: [],
+    });
+    const signalsAfterFirstRefresh = harness.realtimeSignals.length;
     offline = true;
-    await harness.callRpc("refresh", null);
+    await expect(harness.callRpc("refresh", null)).resolves.toMatchObject({
+      repos: 2,
+      items: 2,
+      failedHosts: [
+        expect.objectContaining({
+          hostId: "host-offline",
+          detail: expect.any(String),
+        }),
+      ],
+    });
+    expect(harness.realtimeSignals.length).toBeGreaterThan(
+      signalsAfterFirstRefresh,
+    );
     await expect(
       harness.callRpc("listItems", { kind: "issue" }),
     ).resolves.toMatchObject({
@@ -733,6 +750,134 @@ describe("GitHub RPC contract", () => {
         title: "Keep syncing pull requests",
       }),
     ]);
+  });
+
+  it("starts a review on the repository's owning machine", async () => {
+    const projects = [
+      {
+        id: "proj-review",
+        kind: "standard" as const,
+        sources: [
+          {
+            id: "src-review",
+            projectId: "proj-review",
+            type: "local_path" as const,
+            hostId: "host-review",
+            path: "/work/review",
+            isDefault: true,
+          },
+        ],
+      },
+    ];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-review-routing",
+      sdk: {
+        projects: { list: () => projects },
+        threads: { spawn: () => ({ id: "thr-review" }) },
+      },
+      runHostCommand: async (hostId, input) => {
+        expect(hostId).toBe("host-review");
+        if (input.executable === "git") {
+          return {
+            exitCode: 0,
+            stdout: "https://github.com/acme/review.git\n",
+            stderr: "",
+          };
+        }
+        if (input.args[0] === "auth") {
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        if (input.args[0] === "pr" && input.args.includes("open")) {
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              {
+                number: 42,
+                title: "Review this change",
+                state: "OPEN",
+                author: { login: "alice" },
+                labels: [],
+                assignees: [],
+                url: "https://github.com/acme/review/pull/42",
+                body: "Please review",
+                updatedAt: "2026-08-12T00:00:00Z",
+              },
+            ]),
+            stderr: "",
+          };
+        }
+        return { exitCode: 0, stdout: "[]", stderr: "" };
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("refresh", null)).resolves.toMatchObject({
+      repos: 1,
+      items: 1,
+    });
+    await expect(
+      harness.callRpc("startReview", { repo: "acme/review", number: 42 }),
+    ).resolves.toEqual({ threadId: "thr-review" });
+    expect(harness.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
+      projectId: "proj-review",
+      environment: {
+        type: "host",
+        hostId: "host-review",
+        workspace: {
+          type: "managed-worktree",
+          baseBranch: { kind: "default" },
+        },
+      },
+    });
+    await harness.dispose();
+  });
+
+  it("routes extra repositories using the Personal project host", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "github-personal-routing",
+      settings: {
+        extraRepos: "acme/extra",
+        defaultProject: "proj_personal",
+      },
+      sdk: {
+        projects: {
+          list: () => [
+            {
+              id: "proj_personal",
+              kind: "personal" as const,
+              sources: [],
+            },
+          ],
+        },
+        system: { config: () => ({ primaryHostId: "host-primary" }) },
+        threads: { spawn: () => ({ id: "thr-personal-review" }) },
+      },
+      runHostCommand: async (hostId, input) => {
+        expect(hostId).toBe("host-primary");
+        return input.args[0] === "auth"
+          ? { exitCode: 0, stdout: "", stderr: "" }
+          : { exitCode: 0, stdout: "[]", stderr: "" };
+      },
+    });
+
+    await githubPlugin(bb);
+    await expect(harness.callRpc("status", null)).resolves.toMatchObject({
+      repositories: [
+        { repo: "acme/extra", projectId: null, hostId: "host-primary" },
+      ],
+    });
+    await expect(
+      harness.callRpc("startReview", { repo: "acme/extra", number: 7 }),
+    ).resolves.toEqual({ threadId: "thr-personal-review" });
+    expect(harness.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
+      projectId: "proj_personal",
+      environment: {
+        type: "host",
+        hostId: "host-primary",
+        workspace: { type: "personal" },
+      },
+    });
+    await harness.dispose();
   });
 
   it("flattens every paginated GitHub API page", () => {

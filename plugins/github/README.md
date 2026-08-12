@@ -64,9 +64,12 @@ is present; use an explicit assignee until machine selection is added.
 - Every BB project source whose checkout has a GitHub `origin` remote
   (repo → project mapping is also how spawn picks the project).
 - Plus the `extraRepos` setting: comma-separated `owner/repo` list. These run
-  on the machine that owns the configured `defaultProject` source.
+  on the machine that owns the configured `defaultProject` source (or the
+  server's primary machine when `defaultProject` is Personal).
 - `defaultProject` setting: where threads spawn, and which machine handles
-  extra repositories that have no attached project source.
+  extra repositories that have no attached project source. Review and work
+  threads use that repository machine explicitly, so a secondary machine is
+  not accidentally replaced by the server's primary-machine default.
 
 The `extraRepos` fallback has one `defaultProject`, not one project per extra
 repository. Therefore all unattached extra repositories use that project's
@@ -80,8 +83,13 @@ than silently choosing one source.
 
 ```
 bb plugin config github set extraRepos "owner/repo, owner/other"
-bb plugin reload github
+bb github sync
 ```
+
+Changing these settings invalidates the repository and authentication snapshot
+immediately; a plugin reload is not required. Run `bb github sync` when you
+want to populate the cache right away instead of waiting for the next
+background refresh.
 
 A background service refreshes an in-memory issue/PR cache every 5 minutes;
 GitHub content is not persisted in the central server's plugin database. This

@@ -693,7 +693,10 @@ export default async function plugin(bb: BbPluginApi) {
     }
 
     try {
-      const projects = await bb.sdk.projects.list();
+      // Project settings can select the implicit Personal project. The SDK's
+      // compatibility default omits it, but GitHub's defaultProject setting
+      // must be able to use it for extra repositories.
+      const projects = await bb.sdk.projects.list({ includePersonal: true });
       const { defaultProject, extraRepos } = await settings.get();
       const defaultProjectRow = projects.find(
         (project) => project.id === defaultProject,
@@ -701,6 +704,18 @@ export default async function plugin(bb: BbPluginApi) {
       const fallbackSource =
         defaultProjectRow?.sources.find((source) => source.isDefault) ??
         defaultProjectRow?.sources[0];
+      let fallbackHostId = fallbackSource?.hostId;
+      if (
+        fallbackHostId === undefined &&
+        defaultProjectRow?.kind === "personal" &&
+        extraRepos.trim().length > 0
+      ) {
+        // Personal has no project source. Its thread policy uses the server's
+        // primary host, so ask the same server-owned config for the host that
+        // should run `gh` for an extra repository.
+        fallbackHostId =
+          (await bb.sdk.system.config()).primaryHostId ?? undefined;
+      }
       for (const project of projects) {
         for (const source of project.sources ?? []) {
           if (source.type !== "local_path") continue;
@@ -734,7 +749,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       for (const raw of extraRepos.split(/[\s,]+/)) {
         if (isRepoName(raw) && !byRepo.has(raw) && !conflicts.has(raw)) {
-          if (fallbackSource === undefined) {
+          if (fallbackHostId === undefined) {
             failures.push(
               `No BB machine is available for ${raw}. Select a default BB project with a machine-backed source.`,
             );
@@ -743,7 +758,7 @@ export default async function plugin(bb: BbPluginApi) {
           addRepo({
             repo: raw,
             projectId: null,
-            hostId: fallbackSource.hostId,
+            hostId: fallbackHostId,
           });
         }
       }
@@ -1065,7 +1080,6 @@ export default async function plugin(bb: BbPluginApi) {
         .filter((host) => host.state === "ready")
         .map((host) => host.hostId),
     );
-    const before = JSON.stringify(cachedItems);
     let total = 0;
     const syncFailures = new Map<string, string>();
     for (const { repo, hostId } of repos) {
@@ -1089,7 +1103,6 @@ export default async function plugin(bb: BbPluginApi) {
     // repositories discovered on ready hosts, but do not continue showing a
     // repository whose current host/topology could not be verified.
     cachedItems = cachedItems.filter((item) => currentRepos.has(item.repo));
-    const after = JSON.stringify(cachedItems);
     lastSyncedAt = new Date().toISOString();
     if (
       syncFailures.size > 0 &&
@@ -1115,9 +1128,10 @@ export default async function plugin(bb: BbPluginApi) {
     );
     for (const [hostId, detail] of syncFailures)
       failedHosts.set(hostId, detail);
-    if (before !== after) {
-      bb.realtime.publish("data-changed", { items: total });
-    }
+    // The status snapshot is part of the panel's data too. Publish after every
+    // completed refresh so authentication, offline, and topology changes are
+    // visible even when the item cache itself did not change.
+    bb.realtime.publish("data-changed", { items: total });
     bb.log.info(`synced ${total} item(s) across ${repos.length} repo(s)`);
     return {
       repos: repos.length,
@@ -1184,7 +1198,19 @@ export default async function plugin(bb: BbPluginApi) {
   // ------------------------------------------------------------------
   // Spawning agent threads on issues / PR reviews.
   // ------------------------------------------------------------------
-  async function resolveProjectId(repo: string): Promise<string> {
+  async function resolveSpawnTarget(repo: string): Promise<{
+    projectId: string;
+    environment:
+      | { type: "host"; hostId: string; workspace: { type: "personal" } }
+      | {
+          type: "host";
+          hostId: string;
+          workspace: {
+            type: "managed-worktree";
+            baseBranch: { kind: "default" };
+          };
+        };
+  }> {
     const discovery = await discoverRepos();
     if (discovery.conflicts.includes(repo)) {
       throw new Error(
@@ -1192,13 +1218,48 @@ export default async function plugin(bb: BbPluginApi) {
       );
     }
     const info = discovery.repos.find((entry) => entry.repo === repo);
-    if (info?.projectId != null) return info.projectId;
+    if (info === undefined) {
+      throw new Error(
+        `No BB machine is configured for GitHub repository ${repo}. Refresh GitHub discovery and try again.`,
+      );
+    }
     const { defaultProject } = await settings.get();
-    if (defaultProject) return defaultProject;
-    throw new Error(
-      `No BB project is attached to ${repo}. Create a project whose checkout has ` +
-        "that origin remote, or set the defaultProject plugin setting.",
-    );
+    const projectId = info.projectId ?? defaultProject;
+    if (projectId === undefined) {
+      throw new Error(
+        `No BB project is attached to ${repo}. Create a project whose checkout has ` +
+          "that origin remote, or set the defaultProject plugin setting.",
+      );
+    }
+    const project = (
+      await bb.sdk.projects.list({ includePersonal: true })
+    ).find((candidate) => candidate.id === projectId);
+    if (project === undefined) {
+      throw new Error(
+        `BB project ${projectId} configured for ${repo} no longer exists. Select a different default project.`,
+      );
+    }
+    if (project.kind === "personal") {
+      return {
+        projectId,
+        environment: {
+          type: "host",
+          hostId: info.hostId,
+          workspace: { type: "personal" },
+        },
+      };
+    }
+    return {
+      projectId,
+      environment: {
+        type: "host",
+        hostId: info.hostId,
+        workspace: {
+          type: "managed-worktree",
+          baseBranch: { kind: "default" },
+        },
+      },
+    };
   }
 
   async function spawnOnItem(
@@ -1208,7 +1269,7 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<{ threadId: string }> {
     const item = getCachedItem(kind, repo, number);
     const title = item?.title ?? `${kind === "pr" ? "PR" : "issue"} #${number}`;
-    const projectId = await resolveProjectId(repo);
+    const target = await resolveSpawnTarget(repo);
     const ref = `${repo}#${number}`;
     const prompt =
       kind === "issue"
@@ -1237,8 +1298,8 @@ export default async function plugin(bb: BbPluginApi) {
               "changes or post to GitHub unless asked.",
           ].join("\n");
     const thread = await bb.sdk.threads.spawn({
-      projectId,
-      environment: { type: "project-default" },
+      projectId: target.projectId,
+      environment: target.environment,
       title: `${ref}: ${title}`.slice(0, 120),
       prompt,
     });
